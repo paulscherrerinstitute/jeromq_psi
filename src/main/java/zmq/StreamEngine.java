@@ -517,14 +517,18 @@ public class StreamEngine implements IEngine, IPollEvents, IMsgSink
         //  Position of the version field in the greeting.
         final int versionPos = 10;
 
+        //  Make sure batch sizes match OS buffers
+        final int inBatchSize = options.rcvbuf > Config.IN_BATCH_SIZE.getValue() ? options.rcvbuf : Config.IN_BATCH_SIZE.getValue();
+        final int outBatchSize = options.sndbuf > Config.OUT_BATCH_SIZE.getValue() ? options.sndbuf : Config.OUT_BATCH_SIZE.getValue();
+
         //  Is the peer using the unversioned protocol?
         //  If so, we send and receive rests of identity
         //  messages.
         if ((greeting.get(0) & 0xff) != 0xff || (greeting.get(9) & 0x01) == 0) {
-            encoder = newEncoder(Config.OUT_BATCH_SIZE.getValue(), null, 0);
+            encoder = newEncoder(outBatchSize, null, 0);
             encoder.setMsgSource(session);
 
-            decoder = newDecoder(Config.IN_BATCH_SIZE.getValue(), options.maxMsgSize, null, 0);
+            decoder = newDecoder(inBatchSize, options.maxMsgSize, null, 0);
             decoder.setMsgSink(session);
 
             //  We have already sent the message header.
@@ -555,17 +559,17 @@ public class StreamEngine implements IEngine, IPollEvents, IMsgSink
         else
         if (greeting.get(versionPos) == 0) {
             //  ZMTP/1.0 framing.
-            encoder = newEncoder(Config.OUT_BATCH_SIZE.getValue(), null, 0);
+            encoder = newEncoder(outBatchSize, null, 0);
             encoder.setMsgSource(session);
 
-            decoder = newDecoder(Config.IN_BATCH_SIZE.getValue(), options.maxMsgSize, null, 0);
+            decoder = newDecoder(inBatchSize, options.maxMsgSize, null, 0);
             decoder.setMsgSink(session);
         }
         else {
             //  v1 framing protocol.
-            encoder = newEncoder(Config.OUT_BATCH_SIZE.getValue(), session, V1Protocol.VERSION);
+            encoder = newEncoder(outBatchSize, session, V1Protocol.VERSION);
 
-            decoder = newDecoder(Config.IN_BATCH_SIZE.getValue(), options.maxMsgSize, session, V1Protocol.VERSION);
+            decoder = newDecoder(inBatchSize, options.maxMsgSize, session, V1Protocol.VERSION);
         }
         // Start polling for output if necessary.
         if (outsize == 0) {

@@ -168,6 +168,7 @@ public class Poller extends PollerBase implements Runnable
     {
         worker = new Thread(this, name);
         worker.setDaemon(true);
+        worker.setPriority(Thread.MAX_PRIORITY);
         worker.start();
     }
 

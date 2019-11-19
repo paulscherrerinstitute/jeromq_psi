@@ -1,38 +1,32 @@
-/*
-    Copyright (c) 2007-2014 Contributors as noted in the AUTHORS file
-
-    This file is part of 0MQ.
-
-    0MQ is free software; you can redistribute it and/or modify it under
-    the terms of the GNU Lesser General Public License as published by
-    the Free Software Foundation; either version 3 of the License, or
-    (at your option) any later version.
-
-    0MQ is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Lesser General Public License for more details.
-
-    You should have received a copy of the GNU Lesser General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
 package org.zeromq;
+
+import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.CoreMatchers.notNullValue;
+import static org.junit.Assert.assertThat;
+import static org.junit.Assert.fail;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.DatagramChannel;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.After;
 import org.junit.Assert;
+import org.junit.Before;
+import org.junit.Test;
+import org.zeromq.ZLoop.IZLoopHandler;
+import org.zeromq.ZMQ.PollItem;
 import org.zeromq.ZMQ.Poller;
 import org.zeromq.ZMQ.Socket;
-import org.zeromq.ZMQ.PollItem;
-import org.junit.Test;
-import org.junit.Before;
 
 public class TestZLoop
 {
-    private String received;
+    private String   received;
     private ZContext ctx;
-    private Socket input;
-    private Socket output;
+    private Socket   input;
+    private Socket   output;
 
     @Before
     public void setUp()
@@ -40,10 +34,10 @@ public class TestZLoop
         ctx = new ZContext();
         assert (ctx != null);
 
-        output = ctx.createSocket(ZMQ.PAIR);
+        output = ctx.createSocket(SocketType.PAIR);
         assert (output != null);
         output.bind("inproc://zloop.test");
-        input = ctx.createSocket(ZMQ.PAIR);
+        input = ctx.createSocket(SocketType.PAIR);
         assert (input != null);
         input.connect("inproc://zloop.test");
 
@@ -57,11 +51,86 @@ public class TestZLoop
     }
 
     @Test
+    public void testZLoopWithUDP() throws IOException
+    {
+        final int port = Utils.findOpenPort();
+        final InetSocketAddress addr = new InetSocketAddress("127.0.0.1", port);
+
+        ZLoop loop = new ZLoop(ctx);
+
+        DatagramChannel udpIn = DatagramChannel.open();
+        assertThat(udpIn, notNullValue());
+        udpIn.configureBlocking(false);
+        udpIn.bind(new InetSocketAddress(port));
+
+        DatagramChannel udpOut = DatagramChannel.open();
+        assertThat(udpOut, notNullValue());
+        udpOut.configureBlocking(false);
+        udpOut.connect(addr);
+
+        final AtomicInteger counter = new AtomicInteger();
+        final AtomicBoolean done = new AtomicBoolean();
+
+        loop.addPoller(new PollItem(udpIn, ZMQ.Poller.POLLIN), new IZLoopHandler()
+        {
+            @Override
+            public int handle(ZLoop loop, PollItem item, Object arg)
+            {
+                DatagramChannel udpIn = (DatagramChannel) arg;
+                ByteBuffer bb = ByteBuffer.allocate(3);
+                try {
+                    udpIn.receive(bb);
+                    String read = new String(bb.array(), 0, bb.limit(), ZMQ.CHARSET);
+                    assertThat(read, is("udp"));
+                    done.set(true);
+                    counter.incrementAndGet();
+                }
+                catch (IOException e) {
+                    e.printStackTrace();
+                    fail();
+                }
+                return -1;
+            }
+        }, udpIn);
+        loop.addPoller(new PollItem(udpOut, ZMQ.Poller.POLLOUT), new IZLoopHandler()
+        {
+            @Override
+            public int handle(ZLoop loop, PollItem item, Object arg)
+            {
+                DatagramChannel udpOut = (DatagramChannel) arg;
+                try {
+                    ByteBuffer bb = ByteBuffer.allocate(3);
+                    bb.put("udp".getBytes(ZMQ.CHARSET));
+                    bb.flip();
+                    int written = udpOut.send(bb, addr);
+                    assertThat(written, is(3));
+                    counter.incrementAndGet();
+                }
+                catch (IOException e) {
+                    e.printStackTrace();
+                    fail();
+                }
+                return 0;
+            }
+        }, udpOut);
+        loop.start();
+
+        assertThat(done.get(), is(true));
+        assertThat(counter.get(), is(2));
+
+        udpIn.close();
+        udpOut.close();
+    }
+
+    @Test
     public void testZLoop()
     {
         int rc = 0;
 
-        ZLoop loop = new ZLoop();
+        // setUp() should create the context
+        assert (ctx != null);
+
+        ZLoop loop = new ZLoop(ctx);
         assert (loop != null);
 
         ZLoop.IZLoopHandler timerEvent = new ZLoop.IZLoopHandler()
@@ -103,7 +172,7 @@ public class TestZLoop
     {
         int rc = 0;
 
-        ZLoop loop = new ZLoop();
+        ZLoop loop = new ZLoop(ctx);
         assert (loop != null);
 
         ZLoop.IZLoopHandler timerEvent = new ZLoop.IZLoopHandler()
@@ -161,7 +230,7 @@ public class TestZLoop
     {
         int rc = 0;
 
-        ZLoop loop = new ZLoop();
+        ZLoop loop = new ZLoop(ctx);
         assert (loop != null);
 
         ZLoop.IZLoopHandler timerEvent = new ZLoop.IZLoopHandler()
@@ -217,7 +286,7 @@ public class TestZLoop
     {
         int rc = 0;
 
-        ZLoop loop = new ZLoop();
+        ZLoop loop = new ZLoop(ctx);
         assert (loop != null);
 
         ZLoop.IZLoopHandler timerEvent = new ZLoop.IZLoopHandler()

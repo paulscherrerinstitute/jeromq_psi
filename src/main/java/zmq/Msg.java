@@ -1,44 +1,110 @@
-/*
-    Copyright (c) 2007-2014 Contributors as noted in the AUTHORS file
-
-    This file is part of 0MQ.
-
-    0MQ is free software; you can redistribute it and/or modify it under
-    the terms of the GNU Lesser General Public License as published by
-    the Free Software Foundation; either version 3 of the License, or
-    (at your option) any later version.
-
-    0MQ is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Lesser General Public License for more details.
-
-    You should have received a copy of the GNU Lesser General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
 package zmq;
 
+import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.channels.SocketChannel;
+
+import zmq.io.Metadata;
+import zmq.util.Utils;
+import zmq.util.Wire;
 
 public class Msg
 {
-    enum Type {
+    // dynamic message building used when the size is not known in advance
+    public static final class Builder extends Msg
+    {
+        private final ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+        public Builder()
+        {
+            super();
+        }
+
+        @Override
+        public int size()
+        {
+            return out.size();
+        }
+
+        @Override
+        protected Msg put(int index, byte b)
+        {
+            out.write(b);
+            return this;
+        }
+
+        @Override
+        public Msg put(byte[] src, int off, int len)
+        {
+            if (src == null) {
+                return this;
+            }
+            out.write(src, off, len);
+            setWriteIndex(getWriteIndex() + len);
+            return this;
+        }
+
+        @Override
+        public Msg put(ByteBuffer src, int off, int len)
+        {
+            if (src == null) {
+                return this;
+            }
+            for (int idx = off; idx < off + len; ++idx) {
+                out.write(src.get(idx));
+            }
+            setWriteIndex(getWriteIndex() + len);
+            return this;
+        }
+
+        @Override
+        public Msg putShortString(String data)
+        {
+            if (data == null) {
+                return this;
+            }
+            int length = data.length();
+            Utils.checkArgument(length < 256, "String must be strictly smaller than 256 characters");
+            out.write((byte) length);
+            out.write(data.getBytes(ZMQ.CHARSET), 0, length);
+            setWriteIndex(getWriteIndex() + length + 1);
+            return this;
+        }
+
+        @Override
+        public void setFlags(int flags)
+        {
+            super.setFlags(flags);
+        }
+
+        public Msg build()
+        {
+            return new Msg(this, out);
+        }
+    }
+
+    enum Type
+    {
         DATA,
         DELIMITER
     }
 
-    public static final int MORE = 1;
-    public static final int COMMAND = 2;
-    public static final int IDENTITY = 64;
-    public static final int SHARED = 128;
+    public static final int MORE       = 1;  //  Followed by more parts
+    public static final int COMMAND    = 2;  //  Command frame (see ZMTP spec)
+    public static final int CREDENTIAL = 32;
+    public static final int IDENTITY   = 64;
+    public static final int SHARED     = 128;
 
-    private int flags;
-    private Type type;
+    private Metadata metadata;
+    private int      flags;
+    private Type     type;
 
-    private int size;
-    private byte[] data;
+    // the file descriptor where this message originated, needs to be 64bit due to alignment
+    private SocketChannel fileDesc;
+
+    private final int        size;
+    private byte[]           data;
     private final ByteBuffer buf;
     // keep track of relative write position
     private int writeIndex = 0;
@@ -47,11 +113,7 @@ public class Msg
 
     public Msg()
     {
-        this.type = Type.DATA;
-        this.flags = 0;
-        this.size = 0;
-        this.buf = ByteBuffer.wrap(new byte[0]).order(ByteOrder.BIG_ENDIAN);
-        this.data = buf.array();
+        this(0);
     }
 
     public Msg(int capacity)
@@ -102,9 +164,16 @@ public class Msg
         this.size = m.size;
         this.buf = m.buf != null ? m.buf.duplicate() : null;
         if (m.data != null) {
-           this.data = new byte[this.size];
-           System.arraycopy(m.data, 0, this.data, 0, m.size);
+            this.data = new byte[this.size];
+            System.arraycopy(m.data, 0, this.data, 0, m.size);
         }
+    }
+
+    private Msg(Msg src, ByteArrayOutputStream out)
+    {
+        this(ByteBuffer.wrap(out.toByteArray()));
+        this.type = src.type;
+        this.flags = src.flags;
     }
 
     public boolean isIdentity()
@@ -132,6 +201,16 @@ public class Msg
         return (flags & MORE) > 0;
     }
 
+    public boolean isCommand()
+    {
+        return (flags & COMMAND) == COMMAND;
+    }
+
+    public boolean isCredential()
+    {
+        return (flags & CREDENTIAL) == CREDENTIAL;
+    }
+
     public void setFlags(int flags)
     {
         this.flags |= flags;
@@ -140,6 +219,7 @@ public class Msg
     public void initDelimiter()
     {
         type = Type.DELIMITER;
+        metadata = null;
         flags = 0;
     }
 
@@ -167,6 +247,33 @@ public class Msg
         flags = flags & ~f;
     }
 
+    public void setFd(SocketChannel fileDesc)
+    {
+        this.fileDesc = fileDesc;
+    }
+
+    // TODO V4 use the source channel
+    public SocketChannel fd()
+    {
+        return fileDesc;
+    }
+
+    public Metadata getMetadata()
+    {
+        return metadata;
+    }
+
+    public Msg setMetadata(Metadata metadata)
+    {
+        this.metadata = metadata;
+        return this;
+    }
+
+    public void resetMetadata()
+    {
+        setMetadata(null);
+    }
+
     public byte get()
     {
         return get(readIndex++);
@@ -182,7 +289,12 @@ public class Msg
         return put(writeIndex++, b);
     }
 
-    public Msg put(int index, byte b)
+    public Msg put(int b)
+    {
+        return put(writeIndex++, (byte) b);
+    }
+
+    protected Msg put(int index, byte b)
     {
         buf.put(index, b);
         return this;
@@ -205,6 +317,19 @@ public class Msg
         return this;
     }
 
+    public Msg put(ByteBuffer src, int off, int len)
+    {
+        if (src == null) {
+            return this;
+        }
+        int position = src.position();
+        int limit = src.limit();
+        src.limit(off + len).position(off);
+        put(src);
+        src.limit(limit).position(position);
+        return this;
+    }
+
     public Msg put(ByteBuffer src)
     {
         ByteBuffer dup = buf.duplicate();
@@ -220,10 +345,10 @@ public class Msg
         if (data == null) {
             ByteBuffer dup = buf.duplicate();
             dup.position(index);
-            dup.put(dst, off, count);
+            dup.get(dst, off, count);
         }
         else {
-           System.arraycopy(data, index, dst, off, count);
+            System.arraycopy(data, index, dst, off, count);
         }
 
         return count;
@@ -243,5 +368,59 @@ public class Msg
     public String toString()
     {
         return String.format("#zmq.Msg{type=%s, size=%s, flags=%s}", type, size, flags);
+    }
+
+    protected final int getWriteIndex()
+    {
+        return writeIndex;
+    }
+
+    protected final void setWriteIndex(int writeIndex)
+    {
+        this.writeIndex = writeIndex;
+    }
+
+    public long getLong(int offset)
+    {
+        return Wire.getUInt64(buf, offset);
+    }
+
+    public int getInt(int offset)
+    {
+        return Wire.getUInt32(buf, offset);
+    }
+
+    public int getShort(int offset)
+    {
+        return Wire.getUInt16(buf, offset);
+    }
+
+    public void transfer(ByteBuffer destination, int srcOffset, int srcLength)
+    {
+        int position = buf.position();
+        int limit = buf.limit();
+
+        buf.limit(srcOffset + srcLength).position(srcOffset);
+        destination.put(buf);
+        buf.limit(limit).position(position);
+    }
+
+    /**
+     * Puts a string into the message, prefixed with its length.
+     * Users shall size the message by adding 1 to the length of the string:
+     * It needs to be able to accommodate (data.length+1) more bytes.
+     *
+     * @param data a string shorter than 256 characters. If null, defaults to a no-op.
+     * @return the same message.
+     */
+    public Msg putShortString(String data)
+    {
+        if (data == null) {
+            return this;
+        }
+        ByteBuffer dup = buf.duplicate();
+        dup.position(writeIndex);
+        writeIndex += Wire.putShortString(dup, data);
+        return this;
     }
 }

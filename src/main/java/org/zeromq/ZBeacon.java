@@ -1,22 +1,3 @@
-/*
-    Copyright (c) 2007-2014 Contributors as noted in the AUTHORS file
-
-    This file is part of 0MQ.
-
-    0MQ is free software; you can redistribute it and/or modify it under
-    the terms of the GNU Lesser General Public License as published by
-    the Free Software Foundation; either version 3 of the License, or
-    (at your option) any later version.
-
-    0MQ is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Lesser General Public License for more details.
-
-    You should have received a copy of the GNU Lesser General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
- */
-
 package org.zeromq;
 
 import java.io.IOException;
@@ -26,23 +7,26 @@ import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
+import java.nio.channels.ClosedByInterruptException;
 import java.nio.channels.ClosedChannelException;
 import java.nio.channels.DatagramChannel;
 import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+
+import zmq.util.Objects;
 
 public class ZBeacon
 {
-    public static final long DEFAULT_BROADCAST_INTERVAL = 1000L;
-    public static final String DEFAULT_BROADCAST_HOST = "255.255.255.255";
+    public static final long    DEFAULT_BROADCAST_INTERVAL = 1000L;
+    public static final String  DEFAULT_BROADCAST_HOST     = "255.255.255.255";
+    private static final byte[] DEFAULT_BRODACAST_ADDRESS  = { 0, 0, 0, 0 };
 
-    private final int port;
-    private InetAddress broadcastInetAddress;
-    private final BroadcastClient broadcastClient;
-    private final BroadcastServer broadcastServer;
-    private final byte[] beacon;
-    private byte[] prefix = {};
-    private long broadcastInterval = DEFAULT_BROADCAST_INTERVAL;
-    private Listener listener = null;
+    private final BroadcastClient           broadcastClient;
+    private final BroadcastServer           broadcastServer;
+    private final AtomicReference<byte[]>   prefix            = new AtomicReference<>(new byte[0]);
+    private final AtomicLong                broadcastInterval = new AtomicLong(DEFAULT_BROADCAST_INTERVAL);
+    private final AtomicReference<Listener> listener          = new AtomicReference<>();
 
     public ZBeacon(int port, byte[] beacon)
     {
@@ -56,22 +40,88 @@ public class ZBeacon
 
     public ZBeacon(String host, int port, byte[] beacon, boolean ignoreLocalAddress)
     {
-        this.port = port;
-        this.beacon = beacon;
-        try {
-            broadcastInetAddress = InetAddress.getByName(host);
-        }
-        catch (UnknownHostException unknownHostException) {
-            throw new RuntimeException(unknownHostException);
-        }
+        this(host, port, beacon, ignoreLocalAddress, false);
+    }
 
-        broadcastServer = new BroadcastServer(ignoreLocalAddress);
+    public ZBeacon(String host, int port, byte[] beacon, boolean ignoreLocalAddress, boolean blocking)
+    {
+        this(host, DEFAULT_BRODACAST_ADDRESS, port, beacon, DEFAULT_BROADCAST_INTERVAL, ignoreLocalAddress, blocking);
+    }
+
+    private ZBeacon(String host, byte[] serverAddress, int port, byte[] beacon, long broadcastInterval,
+                    boolean ignoreLocalAddress, boolean blocking)
+    {
+        Objects.requireNonNull(host, "Host cannot be null");
+        Objects.requireNonNull(serverAddress, "Server address cannot be null");
+        Objects.requireNonNull(beacon, "Beacon cannot be null");
+        this.broadcastInterval.set(broadcastInterval);
+        broadcastServer = new BroadcastServer(serverAddress, port, ignoreLocalAddress, blocking);
         broadcastServer.setDaemon(true);
-        broadcastClient = new BroadcastClient();
+        broadcastClient = new BroadcastClient(host, port, this.broadcastInterval, beacon);
         broadcastClient.setDaemon(true);
     }
 
-    public void setUncaughtExceptionHandlers(Thread.UncaughtExceptionHandler clientHandler, Thread.UncaughtExceptionHandler serverHandler)
+    public static class Builder
+    {
+        private String  clientHost         = DEFAULT_BROADCAST_HOST;
+        private byte[]  serverAddr         = DEFAULT_BRODACAST_ADDRESS;
+        private int     port;
+        private long    broadcastInterval  = DEFAULT_BROADCAST_INTERVAL;
+        private byte[]  beacon;
+        private boolean ignoreLocalAddress = true;
+        private boolean blocking           = false;
+
+        public Builder port(int port)
+        {
+            this.port = port;
+            return this;
+        }
+
+        public Builder beacon(byte[] beacon)
+        {
+            this.beacon = beacon;
+            return this;
+        }
+
+        public Builder client(String host)
+        {
+            this.clientHost = host;
+            return this;
+        }
+
+        public Builder server(byte[] addr)
+        {
+            Utils.checkArgument(addr.length == 4 || addr.length == 16, "Server Address has to be 4 or 16 bytes long");
+            this.serverAddr = addr;
+            return this;
+        }
+
+        public Builder ignoreLocalAddress(boolean ignoreLocalAddress)
+        {
+            this.ignoreLocalAddress = ignoreLocalAddress;
+            return this;
+        }
+
+        public Builder blocking(boolean blocking)
+        {
+            this.blocking = blocking;
+            return this;
+        }
+
+        public Builder broadcastInterval(long broadcastInterval)
+        {
+            this.broadcastInterval = broadcastInterval;
+            return this;
+        }
+
+        public ZBeacon build()
+        {
+            return new ZBeacon(clientHost, serverAddr, port, beacon, broadcastInterval, ignoreLocalAddress, blocking);
+        }
+    }
+
+    public void setUncaughtExceptionHandlers(Thread.UncaughtExceptionHandler clientHandler,
+                                             Thread.UncaughtExceptionHandler serverHandler)
     {
         broadcastClient.setUncaughtExceptionHandler(clientHandler);
         broadcastServer.setUncaughtExceptionHandler(serverHandler);
@@ -79,7 +129,7 @@ public class ZBeacon
 
     public void start()
     {
-        if (listener != null) {
+        if (listener.get() != null) {
             broadcastServer.start();
         }
         broadcastClient.start();
@@ -99,22 +149,22 @@ public class ZBeacon
 
     public void setPrefix(byte[] prefix)
     {
-        this.prefix = prefix;
+        this.prefix.set(prefix);
     }
 
     public byte[] getPrefix()
     {
-        return prefix;
+        return prefix.get();
     }
 
     public void setListener(Listener listener)
     {
-        this.listener = listener;
+        this.listener.set(listener);
     }
 
     public Listener getListener()
     {
-        return listener;
+        return listener.get();
     }
 
     /**
@@ -128,14 +178,23 @@ public class ZBeacon
     /**
      * The broadcast client periodically sends beacons via UDP to the network.
      */
-    private class BroadcastClient extends Thread
+    private static class BroadcastClient extends Thread
     {
-        private DatagramChannel broadcastChannel;
+        private DatagramChannel         broadcastChannel;
         private final InetSocketAddress broadcastInetSocketAddress;
+        private final AtomicLong        broadcastInterval;
+        private final byte[]            beacon;
 
-        public BroadcastClient()
+        public BroadcastClient(String host, int port, AtomicLong broadcastInterval, byte[] beacon)
         {
-            broadcastInetSocketAddress = new InetSocketAddress(broadcastInetAddress, port);
+            this.broadcastInterval = broadcastInterval;
+            this.beacon = beacon;
+            try {
+                broadcastInetSocketAddress = new InetSocketAddress(InetAddress.getByName(host), port);
+            }
+            catch (UnknownHostException unknownHostException) {
+                throw new RuntimeException(unknownHostException);
+            }
         }
 
         @Override
@@ -147,9 +206,11 @@ public class ZBeacon
                 while (!interrupted()) {
                     try {
                         broadcastChannel.send(ByteBuffer.wrap(beacon), broadcastInetSocketAddress);
-                        Thread.sleep(broadcastInterval);
+                        Thread.sleep(broadcastInterval.get());
                     }
-                    catch (InterruptedException interruptedException) {
+                    catch (InterruptedException | ClosedByInterruptException interruptedException) {
+                        // Re-interrupt the thread so the caller can handle it.
+                        Thread.currentThread().interrupt();
                         break;
                     }
                     catch (Exception exception) {
@@ -177,19 +238,19 @@ public class ZBeacon
      */
     private class BroadcastServer extends Thread
     {
-        private DatagramChannel handle; // Socket for send/recv
-        private final boolean ignoreLocalAddress;
+        private final DatagramChannel handle;            // Socket for send/recv
+        private final boolean         ignoreLocalAddress;
 
-        public BroadcastServer(boolean ignoreLocalAddress)
+        public BroadcastServer(byte[] serverAddress, int port, boolean ignoreLocalAddress, boolean blocking)
         {
             this.ignoreLocalAddress = ignoreLocalAddress;
             try {
                 // Create UDP socket
                 handle = DatagramChannel.open();
-                handle.configureBlocking(false);
+                handle.configureBlocking(blocking);
                 DatagramSocket sock = handle.socket();
                 sock.setReuseAddress(true);
-                sock.bind(new InetSocketAddress(InetAddress.getByAddress(new byte[] { 0, 0, 0, 0 }), port));
+                sock.bind(new InetSocketAddress(InetAddress.getByAddress(serverAddress), port));
             }
             catch (IOException ioException) {
                 throw new RuntimeException(ioException);
@@ -213,10 +274,9 @@ public class ZBeacon
 
                     InetAddress senderAddress = ((InetSocketAddress) sender).getAddress();
 
-                    if (ignoreLocalAddress &&
-                                (InetAddress.getLocalHost().getHostAddress().equals(senderAddress.getHostAddress())
-                                         || senderAddress.isAnyLocalAddress()
-                                         || senderAddress.isLoopbackAddress())) {
+                    if (ignoreLocalAddress
+                            && (InetAddress.getLocalHost().getHostAddress().equals(senderAddress.getHostAddress())
+                                    || senderAddress.isAnyLocalAddress() || senderAddress.isLoopbackAddress())) {
                         continue;
                     }
 
@@ -235,27 +295,29 @@ public class ZBeacon
 
         private void handleMessage(ByteBuffer buffer, int size, InetAddress from)
         {
+            byte[] prefix = ZBeacon.this.prefix.get();
             if (size < prefix.length) {
                 return;
             }
-            byte[] bytes = buffer.array();
-            // Compare prefix
+            ByteBuffer buf = buffer.duplicate();
+            buf.position(0);
             for (int i = 0; i < prefix.length; i++) {
-                if (bytes[i] != prefix[i]) {
+                if (buf.get() != prefix[i]) {
                     return;
                 }
             }
-            listener.onBeacon(from, Arrays.copyOf(bytes, size));
+            // prefix matched
+            listener.get().onBeacon(from, Arrays.copyOf(buffer.array(), size));
         }
     }
 
     public long getBroadcastInterval()
     {
-        return broadcastInterval;
+        return broadcastInterval.get();
     }
 
     public void setBroadcastInterval(long broadcastInterval)
     {
-        this.broadcastInterval = broadcastInterval;
+        this.broadcastInterval.set(broadcastInterval);
     }
 }

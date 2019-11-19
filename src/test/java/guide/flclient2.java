@@ -1,27 +1,9 @@
-/*
-    Copyright (c) 2007-2014 Contributors as noted in the AUTHORS file
-
-    This file is part of 0MQ.
-
-    0MQ is free software; you can redistribute it and/or modify it under
-    the terms of the GNU Lesser General Public License as published by
-    the Free Software Foundation; either version 3 of the License, or
-    (at your option) any later version.
-
-    0MQ is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Lesser General Public License for more details.
-
-    You should have received a copy of the GNU Lesser General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
 package guide;
 
+import org.zeromq.SocketType;
 import org.zeromq.ZContext;
 import org.zeromq.ZMQ;
-import org.zeromq.ZMQ.PollItem;
+import org.zeromq.ZMQ.Poller;
 import org.zeromq.ZMQ.Socket;
 import org.zeromq.ZMsg;
 
@@ -36,15 +18,15 @@ public class flclient2
     //  Here is the {{flclient}} class implementation. Each instance has a
     //  context, a DEALER socket it uses to talk to the servers, a counter
     //  of how many servers it's connected to, and a request getSequence number:
-    private ZContext ctx;        //  Our context wrapper
-    private Socket socket;       //  DEALER socket talking to servers
-    private int servers;         //  How many servers we have connected to
-    private int sequence;        //  Number of requests ever sent
+    private ZContext ctx;      //  Our context wrapper
+    private Socket   socket;   //  DEALER socket talking to servers
+    private int      servers;  //  How many servers we have connected to
+    private int      sequence; //  Number of requests ever sent
 
     public flclient2()
     {
         ctx = new ZContext();
-        socket = ctx.createSocket(ZMQ.DEALER);
+        socket = ctx.createSocket(SocketType.DEALER);
     }
 
     public void destroy()
@@ -75,10 +57,13 @@ public class flclient2
         //  Since we can poll several times, calculate each one
         ZMsg reply = null;
         long endtime = System.currentTimeMillis() + GLOBAL_TIMEOUT;
+
+        Poller poller = ctx.createPoller(1);
+        poller.register(socket, Poller.POLLIN);
+
         while (System.currentTimeMillis() < endtime) {
-            PollItem[] items = { new PollItem(socket, ZMQ.Poller.POLLIN) };
-            ZMQ.poll(items, endtime - System.currentTimeMillis());
-            if (items[0].isReadable()) {
+            poller.poll(endtime - System.currentTimeMillis());
+            if (poller.pollin(0)) {
                 //  Reply is [empty][getSequence][OK]
                 reply = ZMsg.recvMsg(socket);
                 assert (reply.size() == 3);
@@ -90,15 +75,16 @@ public class flclient2
                 reply.destroy();
             }
         }
+        poller.close();
         request.destroy();
         return reply;
 
     }
 
-    public static void main (String[] argv)
+    public static void main(String[] argv)
     {
         if (argv.length == 0) {
-            System.out.printf ("I: syntax: flclient2 <endpoint> ...\n");
+            System.out.printf("I: syntax: flclient2 <endpoint> ...\n");
             System.exit(0);
         }
 
@@ -123,8 +109,7 @@ public class flclient2
             }
             reply.destroy();
         }
-        System.out.printf ("Average round trip cost: %d usec\n",
-                (int) (System.currentTimeMillis() - start) / 10);
+        System.out.printf("Average round trip cost: %d usec\n", (int) (System.currentTimeMillis() - start) / 10);
 
         client.destroy();
     }

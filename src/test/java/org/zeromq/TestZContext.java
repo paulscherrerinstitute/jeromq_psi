@@ -1,52 +1,154 @@
-/*
-    Copyright (c) 2007-2014 Contributors as noted in the AUTHORS file
-
-    This file is part of 0MQ.
-
-    0MQ is free software; you can redistribute it and/or modify it under
-    the terms of the GNU Lesser General Public License as published by
-    the Free Software Foundation; either version 3 of the License, or
-    (at your option) any later version.
-
-    0MQ is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Lesser General Public License for more details.
-
-    You should have received a copy of the GNU Lesser General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
 package org.zeromq;
 
-import org.junit.Assert;
+import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.CoreMatchers.notNullValue;
+import static org.junit.Assert.assertThat;
+
 import org.junit.Test;
 import org.zeromq.ZMQ.Socket;
 
 public class TestZContext
 {
-    @Test
+    @Test(timeout = 5000)
     public void testZContext()
     {
         ZContext ctx = new ZContext();
-        Socket s1 = ctx.createSocket(ZMQ.PAIR);
-        Socket s2 = ctx.createSocket(ZMQ.XREQ);
-        Socket s3 = ctx.createSocket(ZMQ.REQ);
-        Socket s4 = ctx.createSocket(ZMQ.REP);
-        Socket s5 = ctx.createSocket(ZMQ.PUB);
-        Socket s6 = ctx.createSocket(ZMQ.SUB);
+        ctx.createSocket(SocketType.PAIR);
+        ctx.createSocket(SocketType.REQ);
+        ctx.createSocket(SocketType.REP);
+        ctx.createSocket(SocketType.PUB);
+        ctx.createSocket(SocketType.SUB);
         ctx.close();
-        Assert.assertEquals(0, ctx.getSockets().size());
+        assertThat(ctx.getSockets().isEmpty(), is(true));
     }
 
-    @Test
+    @Test(timeout = 5000)
     public void testZContextSocketCloseBeforeContextClose()
     {
         ZContext ctx = new ZContext();
-        Socket s1 = ctx.createSocket(ZMQ.PUSH);
-        Socket s2 = ctx.createSocket(ZMQ.PULL);
+        Socket s1 = ctx.createSocket(SocketType.PUSH);
+        Socket s2 = ctx.createSocket(SocketType.PULL);
         s1.close();
         s2.close();
         ctx.close();
+    }
+
+    @Test(timeout = 5000)
+    public void testZContextLinger()
+    {
+        ZContext ctx = new ZContext();
+        int linger = ctx.getLinger();
+        assertThat(linger, is(0));
+
+        final int newLinger = 1000;
+        ctx.setLinger(newLinger);
+        linger = ctx.getLinger();
+        assertThat(linger, is(newLinger));
+        ctx.close();
+    }
+
+    @Test(timeout = 5000)
+    public void testConstruction()
+    {
+        ZContext ctx = new ZContext();
+        assertThat(ctx, notNullValue());
+        assertThat(ctx.getContext(), notNullValue());
+        assertThat(ctx.isClosed(), is(false));
+        assertThat(ctx.getIoThreads(), is(1));
+        assertThat(ctx.getLinger(), is(0));
+        assertThat(ctx.isMain(), is(true));
+    }
+
+    @SuppressWarnings("deprecation")
+    @Test(timeout = 5000)
+    public void testDestruction()
+    {
+        ZContext ctx = new ZContext();
+        ctx.close();
+        assertThat(ctx.isClosed(), is(true));
+        assertThat(ctx.getSockets().isEmpty(), is(true));
+
+        // Ensure context is not destroyed if not in main thread
+        ZContext ctx1 = new ZContext();
+        ctx1.setMain(false);
+        @SuppressWarnings("unused")
+        Socket s = ctx1.createSocket(SocketType.PAIR);
+        ctx1.close();
+        assertThat(ctx1.getSockets().isEmpty(), is(true));
+        assertThat(ctx1.getContext(), notNullValue());
+    }
+
+    @Test(timeout = 5000)
+    public void testAddingSockets() throws ZMQException
+    {
+        ZContext ctx = new ZContext();
+        try {
+            Socket s = ctx.createSocket(SocketType.PUB);
+            assertThat(s, notNullValue());
+            assertThat(s.getSocketType(), is(SocketType.PUB));
+            Socket s1 = ctx.createSocket(SocketType.REQ);
+            assertThat(s1, notNullValue());
+            assertThat(s1.getSocketType(), is(SocketType.REQ));
+            assertThat(ctx.getSockets().size(), is(2));
+        }
+        finally {
+            ctx.close();
+        }
+    }
+
+    @Test(timeout = 5000)
+    public void testRemovingSockets() throws ZMQException
+    {
+        ZContext ctx = new ZContext();
+        try {
+            Socket s = ctx.createSocket(SocketType.PUB);
+            assertThat(s, notNullValue());
+            assertThat(ctx.getSockets().size(), is(1));
+
+            ctx.destroySocket(s);
+            assertThat(ctx.getSockets().size(), is(0));
+        }
+        finally {
+            ctx.close();
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    @Test(timeout = 5000)
+    public void testShadow()
+    {
+        ZContext ctx = new ZContext();
+        Socket s = ctx.createSocket(SocketType.PUB);
+        assertThat(s, notNullValue());
+        assertThat(ctx.getSockets().size(), is(1));
+
+        ZContext shadowCtx = ZContext.shadow(ctx);
+        shadowCtx.setMain(false);
+        assertThat(shadowCtx.getSockets().size(), is(0));
+        @SuppressWarnings("unused")
+        Socket s1 = shadowCtx.createSocket(SocketType.SUB);
+        assertThat(shadowCtx.getSockets().size(), is(1));
+        assertThat(ctx.getSockets().size(), is(1));
+
+        shadowCtx.close();
+        ctx.close();
+    }
+
+    @Test(timeout = 5000)
+    public void testSeveralPendingInprocSocketsAreClosedIssue595()
+    {
+        ZContext ctx = new ZContext();
+
+        for (SocketType type : SocketType.values()) {
+            for (int idx = 0; idx < 3; ++idx) {
+                Socket socket = ctx.createSocket(type);
+                assertThat(socket, notNullValue());
+                boolean rc = socket.connect("inproc://" + type.name());
+                assertThat(rc, is(true));
+            }
+        }
+        ctx.close();
+
+        assertThat(ctx.isClosed(), is(true));
     }
 }

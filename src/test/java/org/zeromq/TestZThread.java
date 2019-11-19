@@ -1,29 +1,15 @@
-/*
-    Copyright (c) 2007-2014 Contributors as noted in the AUTHORS file
-
-    This file is part of 0MQ.
-
-    0MQ is free software; you can redistribute it and/or modify it under
-    the terms of the GNU Lesser General Public License as published by
-    the Free Software Foundation; either version 3 of the License, or
-    (at your option) any later version.
-
-    0MQ is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Lesser General Public License for more details.
-
-    You should have received a copy of the GNU Lesser General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
 package org.zeromq;
+
+import org.junit.Ignore;
+import org.junit.Test;
+import org.zeromq.ZMQ.Socket;
+import zmq.ZError;
 
 import java.util.concurrent.CountDownLatch;
 
-import org.junit.Assert;
-import org.junit.Test;
-import org.zeromq.ZMQ.Socket;
+import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.CoreMatchers.notNullValue;
+import static org.junit.Assert.assertThat;
 
 public class TestZThread
 {
@@ -31,22 +17,13 @@ public class TestZThread
     public void testDetached()
     {
         final CountDownLatch stopped = new CountDownLatch(1);
-        ZThread.IDetachedRunnable detached = new ZThread.IDetachedRunnable()
-        {
-            @Override
-            public void run(Object[] args)
-            {
-                ZContext ctx = new ZContext();
-                assert (ctx != null);
-
-                Socket push = ctx.createSocket(ZMQ.PUSH);
-                assert (push != null);
-                ctx.close();
-                stopped.countDown();
+        ZThread.start((args) -> {
+            try (ZContext ctx = new ZContext()) {
+                Socket push = ctx.createSocket(SocketType.PUSH);
+                assertThat(push, notNullValue());
             }
-        };
-
-        ZThread.start(detached);
+            stopped.countDown();
+        });
         try {
             stopped.await();
         }
@@ -59,29 +36,53 @@ public class TestZThread
     @Test
     public void testFork()
     {
-        ZContext ctx = new ZContext();
+        final ZContext ctx = new ZContext();
 
-        ZThread.IAttachedRunnable attached = new ZThread.IAttachedRunnable()
-        {
-            @Override
-            public void run(Object[] args, ZContext ctx, Socket pipe)
-            {
-                //  Create a socket to check it'll be automatically deleted
-                ctx.createSocket(ZMQ.PUSH);
-                pipe.recvStr();
-                pipe.send("pong");
-            }
-        };
-
-        Socket pipe = ZThread.fork(ctx, attached);
-        assert (pipe != null);
+        Socket pipe = ZThread.fork(ctx, (args, ctx1, pipe1) -> {
+            //  Create a socket to check it'll be automatically deleted
+            ctx1.createSocket(SocketType.PUSH);
+            pipe1.recvStr();
+            pipe1.send("pong");
+        });
+        assertThat(pipe, notNullValue());
 
         pipe.send("ping");
         String pong = pipe.recvStr();
 
-        Assert.assertEquals(pong, "pong");
+        assertThat(pong, is("pong"));
 
         //  Everything should be cleanly closed now
-        ctx.destroy();
+        ctx.close();
+    }
+
+    @Test
+    @Ignore
+    public void testClosePipe()
+    {
+        ZContext ctx = new ZContext();
+        Socket pipe = ZThread.fork(ctx, (args, ctx1, pipe1) -> {
+            pipe1.recvStr();
+            pipe1.send("pong");
+        });
+
+        assertThat(pipe, notNullValue());
+
+        boolean rc = pipe.send("ping");
+        assertThat(rc, is(true));
+
+        String pong = pipe.recvStr();
+
+        assertThat(pong, is("pong"));
+
+        try {
+            rc = pipe.send("boom ?!");
+            assertThat("pipe was closed pretty fast", rc, is(true));
+        }
+        catch (ZMQException e) {
+            int errno = e.getErrorCode();
+            assertThat("Expected exception has the wrong code", ZError.ETERM, is(errno));
+        }
+
+        ctx.close();
     }
 }

@@ -1,24 +1,6 @@
-/*
-    Copyright (c) 2007-2014 Contributors as noted in the AUTHORS file
-
-    This file is part of 0MQ.
-
-    0MQ is free software; you can redistribute it and/or modify it under
-    the terms of the GNU Lesser General Public License as published by
-    the Free Software Foundation; either version 3 of the License, or
-    (at your option) any later version.
-
-    0MQ is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Lesser General Public License for more details.
-
-    You should have received a copy of the GNU Lesser General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
- */
-
 package org.zeromq;
 
+import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -33,13 +15,13 @@ import zmq.SocketBase;
 
 /**
  * Implementation of a remotely controlled  proxy for 0MQ, using {@link ZActor}.
- * <br/>
+ * <br>
  * The goals of this implementation are to delegate the creation of sockets
  * in a background thread via a callback interface to ensure their correct use
  * and to provide ultimately to end-users the following features.
- * <p>
- * Basic features:
- * <p><ul>
+ *
+ * <p>Basic features:</p>
+ * <ul>
  *  <li>Remote Control
  *   <ul>
  *   <li>Start:                                 <i>if was paused, flushes the pending messages</i>
@@ -49,27 +31,25 @@ import zmq.SocketBase;
  *   <li>Cold Restart:                          <i>Closes and recreates the connections</i>
  *   <li>{@link #restart(ZMsg) Hot Restart}:    <i>User-defined behavior with custom messages</i>
  *   <li>{@link #configure(ZMsg) Configure}:    <i>User-defined behavior with custom messages</i>
- *   <li>{@link #command(String, boolean) ...}: <i>Custom commands of your own</i>
+ *   <li>{@link #command(String, boolean)} ...: <i>Custom commands of your own</i>
  *   <li>Exit:                                  <i>Definitive shutdown of the proxy and its control</i>
  *  </ul>
  *  All the non-custom commands can be performed in asynchronous or synchronous mode.
- *  <br/>
- *  <br/>
+ *  <br>
  * <li>Proxy mechanism ensured by pluggable pumps
  *    <ul>
- *      <li>with built-in low-level {@link ZmqPump} (zmq.ZMQ): useful for performances
+ *      <li>with built-in low-level {@link org.zeromq.ZProxy.ZmqPump} (zmq.ZMQ): useful for performances
  *      <li>with built-in high-level  {@link org.zeromq.ZProxy.ZPump}  (ZeroMQ): useful for {@link org.zeromq.ZProxy.ZPump.Transformer message transformation}, lower performances
  *      <li>with your own-custom proxy pump implementing a {@link Pump 1-method interface}
  *    </ul>
  * </ul><p>
- * <p>
+ * <br>
  * You can have all the above non-customizable features in about these lines of code:
- * <p>
  * <pre>
  * {@code
         final ZProxy.Proxy provider = new ZProxy.SimpleProxy()
         {
-            public Socket create(ZContext ctx, ZProxy.Plug place, Object[] args)
+            public Socket create(ZContext ctx, ZProxy.Plug place, Object ... args)
             {
                 assert ("TEST".equals(args[0]);
                 Socket socket = null;
@@ -82,7 +62,7 @@ import zmq.SocketBase;
                 return socket;
             }
 
-            public void configure(Socket socket, ZProxy.Plug place, Object[] args)
+            public void configure(Socket socket, ZProxy.Plug place, Object ... args)
             {
                 assert ("TEST".equals(args[0]);
                 int port = -1;
@@ -100,14 +80,13 @@ import zmq.SocketBase;
 
         ZProxy proxy = ZProxy.newProxy("ProxyOne", provider, "ABRACADABRA", Arrays.asList("TEST"));
 }
- * <p></pre>
+ * </pre>
  * Once created, the proxy is not started. You have to perform first a start command on it.
  * This choice was made because it is easier for a user to start it with one line of code than for the code to internally handle
  * different possible starting states (after all, someone may want the proxy started but paused at first or configured in a specific way?)
  * and because the a/sync stuff was funnier. Life is unfair ...
  * Or maybe an idea is floating in the air?
- * <br/>
- *
+ * <br>
  * You can then use it like this:
  * <pre>
  * {@code
@@ -127,27 +106,28 @@ import zmq.SocketBase;
         status = proxy.status(sync);
         assert (!proxy.started());
    }
- * <p></pre>
+ * </pre>
  *
  * A {@link #command(Command, boolean) programmatic interface} with enums is also available.
  *
  *
  */
 // Proxy for 0MQ.
+@SuppressWarnings("deprecation")
 public class ZProxy
 {
     /**
      * Possible places for sockets in the proxy.
      */
-    public static enum Plug
+    public enum Plug
     {
-        FRONT,   // The position of the frontend socket.
-        BACK,    // The position of the backend socket.
-        CAPTURE; // The position of the capture socket.
+        FRONT, // The position of the frontend socket.
+        BACK, // The position of the backend socket.
+        CAPTURE // The position of the capture socket.
     }
 
     // Contract for socket creation and customizable configuration in proxy threading.
-    public static interface Proxy
+    public interface Proxy
     {
         /**
          * Creates and initializes (bind, options ...) the socket for the given plug in the proxy.
@@ -159,7 +139,7 @@ public class ZProxy
          * @param args   the optional array of arguments that has been passed at the creation of the ZProxy.
          * @return the created socket. Possibly null only for capture.
          */
-        Socket create(ZContext ctx, Plug place, Object[] args);
+        Socket create(ZContext ctx, Plug place, Object... args);
 
         /**
          * Configures the given socket.
@@ -167,8 +147,9 @@ public class ZProxy
          * @param socket  the socket to configure
          * @param place   the position for the socket in the proxy
          * @param args    the optional array of arguments that has been passed at the creation of the ZProxy.
+         * @return true if successfully configured, otherwise false
          */
-        void configure(Socket socket, Plug place, Object[] args);
+        boolean configure(Socket socket, Plug place, Object... args) throws IOException;
 
         /**
          * Performs a hot restart of the given socket.
@@ -181,7 +162,7 @@ public class ZProxy
          * @return true to perform a cold restart instead, false to do nothing. All the results will be collected from calls for all plugs.
          * If any of them returns true, the cold restart is performed.
          */
-        boolean restart(ZMsg cfg, Socket socket, Plug place, Object[] args);
+        boolean restart(ZMsg cfg, Socket socket, Plug place, Object... args) throws IOException;
 
         /**
          * Configures the proxy with a custom message.
@@ -196,8 +177,7 @@ public class ZProxy
          * @param args      the optional array of arguments that has been passed at the creation of the ZProxy.
          * @return true to continue the proxy, false to exit
          */
-        boolean configure(Socket pipe, ZMsg cfg, Socket frontend, Socket backend,
-                Socket capture, Object[] args);
+        boolean configure(Socket pipe, ZMsg cfg, Socket frontend, Socket backend, Socket capture, Object... args);
 
         /**
          * Handles a custom command not recognized by the proxy.
@@ -213,27 +193,27 @@ public class ZProxy
          *
          * @return true to continue the proxy, false to exit
          */
-        boolean custom(Socket pipe, String cmd, Socket frontend, Socket backend, Socket capture, Object[] args);
+        boolean custom(Socket pipe, String cmd, Socket frontend, Socket backend, Socket capture, Object... args);
 
         // this may be useful
         public abstract static class SimpleProxy implements Proxy
         {
             @Override
-            public boolean restart(ZMsg cfg, Socket socket, Plug place,
-                    Object[] args)
+            public boolean restart(ZMsg cfg, Socket socket, Plug place, Object... args) throws IOException
             {
                 return true;
             }
 
             @Override
-            public boolean configure(Socket pipe, ZMsg cfg,
-                    Socket frontend, Socket backend, Socket capture, Object[] args)
+            public boolean configure(Socket pipe, ZMsg cfg, Socket frontend, Socket backend, Socket capture,
+                                     Object... args)
             {
                 return true;
             }
 
             @Override
-            public boolean custom(Socket pipe, String cmd, Socket frontend, Socket backend, Socket capture, Object[] args)
+            public boolean custom(Socket pipe, String cmd, Socket frontend, Socket backend, Socket capture,
+                                  Object... args)
             {
                 return true;
             }
@@ -250,20 +230,36 @@ public class ZProxy
      * @param name       the name of the proxy. Possibly null.
      * @param selector   the creator of the selector used for the internal polling. Not null.
      * @param sockets    the sockets creator of the proxy. Not null.
+     * @param motdelafin the final word used to mark the end of the proxy. Null to disable this mechanism.
+     * @param args       an optional array of arguments that will be passed at the creation.
+     *
+     * @return the created proxy.
+     * @deprecated use {@link #newZProxy(ZContext, String, Proxy, String, Object...)} instead.
+     */
+    @Deprecated
+    public static ZProxy newZProxy(ZContext ctx, String name, SelectorCreator selector, Proxy sockets,
+                                   String motdelafin, Object... args)
+    {
+        return newZProxy(ctx, name, sockets, motdelafin, args);
+    }
+
+    /**
+     * Creates a new proxy in a ZeroMQ way.
+     * This proxy will be less efficient than the
+     * {@link #newZProxy(ZContext, String, org.zeromq.ZProxy.Proxy, String, Object...) low-level one}.
+     *
+     * @param ctx        the context used for the proxy.
+     * Possibly null, in this case a new context will be created and automatically destroyed afterwards.
+     * @param name       the name of the proxy. Possibly null.
+     * @param sockets    the sockets creator of the proxy. Not null.
+     * @param motdelafin the final word used to mark the end of the proxy. Null to disable this mechanism.
      * @param args       an optional array of arguments that will be passed at the creation.
      *
      * @return the created proxy.
      */
-    // creates a new proxy
-    public static ZProxy newZProxy(ZContext ctx, String name,
-            SelectorCreator selector, Proxy sockets, String motdelafin, Object... args)
-    {
-        return new ZProxy(ctx, name, selector, sockets, new ZPump(), null, args);
-    }
-
     public static ZProxy newZProxy(ZContext ctx, String name, Proxy sockets, String motdelafin, Object... args)
     {
-        return new ZProxy(ctx, name, null, sockets, new ZPump(), motdelafin, args);
+        return new ZProxy(ctx, name, sockets, new ZPump(), motdelafin, args);
     }
 
     /**
@@ -274,20 +270,35 @@ public class ZProxy
      * @param name       the name of the proxy. Possibly null.
      * @param selector   the creator of the selector used for the internal polling. Not null.
      * @param sockets    the sockets creator of the proxy. Not null.
+     * @param motdelafin the final word used to mark the end of the proxy. Null to disable this mechanism.
+     * @param args       an optional array of arguments that will be passed at the creation.
+     *
+     * @return the created proxy.
+     * @deprecated use {@link #newProxy(ZContext, String, Proxy, String, Object...)} instead.
+     */
+    // creates a new low-level proxy
+    @Deprecated
+    public static ZProxy newProxy(ZContext ctx, String name, SelectorCreator selector, Proxy sockets, String motdelafin,
+                                  Object... args)
+    {
+        return newProxy(ctx, name, sockets, motdelafin, args);
+    }
+
+    /**
+     * Creates a new low-level proxy for better performances.
+     *
+     * @param ctx        the context used for the proxy.
+     * Possibly null, in this case a new context will be created and automatically destroyed afterwards.
+     * @param name       the name of the proxy. Possibly null.
+     * @param sockets    the sockets creator of the proxy. Not null.
+     * @param motdelafin the final word used to mark the end of the proxy. Null to disable this mechanism.
      * @param args       an optional array of arguments that will be passed at the creation.
      *
      * @return the created proxy.
      */
-    // creates a new low-level proxy
-    public static ZProxy newProxy(ZContext ctx, String name,
-            SelectorCreator selector, Proxy sockets, String motdelafin, Object... args)
-    {
-        return new ZProxy(ctx, name, selector, sockets, new ZmqPump(), motdelafin, args);
-    }
-
     public static ZProxy newProxy(ZContext ctx, String name, Proxy sockets, String motdelafin, Object... args)
     {
-        return new ZProxy(ctx, name, null, sockets, new ZmqPump(), motdelafin, args);
+        return new ZProxy(ctx, name, sockets, new ZmqPump(), motdelafin, args);
     }
 
     /**
@@ -338,12 +349,16 @@ public class ZProxy
      */
     public String command(String command, boolean sync)
     {
-        assert (!command.equals(CONFIG));
-        assert (!command.equals(RESTART));
-        if (command.equals(STATUS)) {
+        Utils.checkArgument(
+                            !CONFIG.equals(command),
+                            "CONFIG is not useable with that API. Please use configure(ZMsg) method");
+        Utils.checkArgument(
+                            !RESTART.equals(command),
+                            "RESTART is not useable with that API. Please use restart(ZMsg) method");
+        if (STATUS.equals(command)) {
             return status(sync);
         }
-        if (command.equals(EXIT)) {
+        if (EXIT.equals(command)) {
             return exit();
         }
         // consume the status in the pipe
@@ -432,16 +447,13 @@ public class ZProxy
         ZMsg msg = new ZMsg();
         msg.add(RESTART);
 
-        if (hot == null) {
+        final boolean cold = hot == null;
+        if (cold) {
             msg.add(Boolean.toString(false));
         }
         else {
             msg.add(Boolean.toString(true));
-            // FIXME better way to append 1 message into another ?
-            for (int index = 0; index < hot.size(); ++index) {
-                ZFrame frame = hot.pop();
-                msg.add(frame);
-            }
+            msg.append(hot);
         }
 
         String status = EXITED;
@@ -475,12 +487,8 @@ public class ZProxy
     public String exit()
     {
         agent.send(EXIT);
-        try {
-            exit.await();
-        }
-        catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        exit.awaitSilent();
+        agent.close();
         return EXITED;
     }
 
@@ -558,7 +566,7 @@ public class ZProxy
     }
 
     // to handle commands in a more java-centric way
-    public static enum Command
+    public enum Command
     {
         START,
         PAUSE,
@@ -566,7 +574,7 @@ public class ZProxy
         RESTART,
         EXIT,
         STATUS,
-        CONFIG;
+        CONFIG
     }
 
     // commands for the control pipe
@@ -579,22 +587,22 @@ public class ZProxy
     private static final String CONFIG  = Command.CONFIG.name();
 
     // to handle states in a more java-centric way
-    public static enum State
+    public enum State
     {
         ALIVE,
         STARTED,
         PAUSED,
         STOPPED,
-        EXITED;
+        EXITED
     }
 
     // state responses from the control pipe
-    public static final String STARTED  = State.STARTED.name();
-    public static final String PAUSED   = State.PAUSED.name();
-    public static final String STOPPED  = State.STOPPED.name();
-    public static final String EXITED   = State.EXITED.name();
+    public static final String STARTED = State.STARTED.name();
+    public static final String PAUSED  = State.PAUSED.name();
+    public static final String STOPPED = State.STOPPED.name();
+    public static final String EXITED  = State.EXITED.name();
     // defines the very first time where no command changing the state has been issued
-    public static final String ALIVE    = State.ALIVE.name();
+    public static final String ALIVE = State.ALIVE.name();
 
     private static final AtomicInteger counter = new AtomicInteger();
 
@@ -607,26 +615,57 @@ public class ZProxy
     /**
      * Creates a new unnamed proxy.
      *
-     * @param selector the creator of the selector used for the proxy.
-     * @param creator the creator of the sockets of the proxy.
+     * @param selector   the creator of the selector used for the proxy.
+     * @param creator    the creator of the sockets of the proxy.
+     * @param motdelafin the final word used to mark the end of the proxy. Null to disable this mechanism.
+     * @param args       an optional array of arguments that will be passed at the creation.
+     * @deprecated use {@link #ZProxy(Proxy, String, Object...)} instead.
      */
-    public ZProxy(SelectorCreator selector, Proxy creator,
-            String motdelafin, Object ... args)
+    @Deprecated
+    public ZProxy(SelectorCreator selector, Proxy creator, String motdelafin, Object... args)
     {
-        this(null, null, selector, creator, null, motdelafin, args);
+        this(creator, motdelafin, args);
+    }
+
+    /**
+     * Creates a new unnamed proxy.
+     *
+     * @param creator    the creator of the sockets of the proxy.
+     * @param motdelafin the final word used to mark the end of the proxy. Null to disable this mechanism.
+     * @param args       an optional array of arguments that will be passed at the creation.
+     */
+    public ZProxy(Proxy creator, String motdelafin, Object... args)
+    {
+        this(null, creator, null, motdelafin, args);
     }
 
     /**
      * Creates a new named proxy.
      *
-     * @param name the name of the proxy (used in threads naming).
-     * @param selector the creator of the selector used for the proxy.
-     * @param creator the creator of the sockets of the proxy.
+     * @param name       the name of the proxy (used in threads naming).
+     * @param selector   the creator of the selector used for the proxy.
+     * @param creator    the creator of the sockets of the proxy.
+     * @param motdelafin the final word used to mark the end of the proxy. Null to disable this mechanism.
+     * @param args       an optional array of arguments that will be passed at the creation.
+     * @deprecated use {@link #ZProxy(String, Proxy, String, Object...)} instead.
      */
-    public ZProxy(String name, SelectorCreator selector,
-            Proxy creator, String motdelafin, Object... args)
+    @Deprecated
+    public ZProxy(String name, SelectorCreator selector, Proxy creator, String motdelafin, Object... args)
     {
-        this(null, name, selector, creator, null, motdelafin, args);
+        this(name, creator, motdelafin, args);
+    }
+
+    /**
+     * Creates a new named proxy.
+     *
+     * @param name       the name of the proxy (used in threads naming).
+     * @param creator    the creator of the sockets of the proxy.
+     * @param motdelafin the final word used to mark the end of the proxy. Null to disable this mechanism.
+     * @param args       an optional array of arguments that will be passed at the creation.
+     */
+    public ZProxy(String name, Proxy creator, String motdelafin, Object... args)
+    {
+        this(name, creator, null, motdelafin, args);
     }
 
     /**
@@ -635,13 +674,48 @@ public class ZProxy
      * @param ctx the main context used.
      * If null, a new context will be created and closed at the stop of the operation.
      * <b>If not null, it is the responsibility of the call to close it.</b>
-     * @param name the name of the proxy (used in threads naming).
-     * @param selector the creator of the selector used for the proxy.
-     * @param sockets the creator of the sockets of the proxy.
-     * @param pump the pump used for the proxy
+     * @param name       the name of the proxy (used in threads naming).
+     * @param selector   the creator of the selector used for the proxy.
+     * @param sockets    the creator of the sockets of the proxy.
+     * @param pump       the pump used for the proxy
+     * @param motdelafin the final word used to mark the end of the proxy. Null to disable this mechanism.
+     * @param args       an optional array of arguments that will be passed at the creation.
+     * @deprecated use {@link #ZProxy(ZContext, String, Proxy, Pump, String, Object...)} instead.
      */
-    public ZProxy(ZContext ctx, String name, SelectorCreator selector,
-            Proxy sockets, Pump pump, String motdelafin, Object... args)
+    @Deprecated
+    public ZProxy(ZContext ctx, String name, SelectorCreator selector, Proxy sockets, Pump pump, String motdelafin,
+            Object... args)
+    {
+        this(ctx, name, sockets, pump, motdelafin, args);
+    }
+
+    /**
+     * Creates a new named proxy. A new context will be created and closed at the stop of the operation.
+     *
+     * @param name       the name of the proxy (used in threads naming).
+     * @param sockets    the creator of the sockets of the proxy.
+     * @param pump       the pump used for the proxy
+     * @param motdelafin the final word used to mark the end of the proxy. Null to disable this mechanism.
+     * @param args       an optional array of arguments that will be passed at the creation.
+     */
+    public ZProxy(String name, Proxy sockets, Pump pump, String motdelafin, Object... args)
+    {
+        this(null, name, sockets, pump, motdelafin, args);
+    }
+
+    /**
+     * Creates a new named proxy.
+     *
+     * @param ctx the main context used.
+     * If null, a new context will be created and closed at the stop of the operation.
+     * <b>If not null, it is the responsibility of the call to close it.</b>
+     * @param name       the name of the proxy (used in threads naming).
+     * @param sockets    the creator of the sockets of the proxy.
+     * @param pump       the pump used for the proxy
+     * @param motdelafin the final word used to mark the end of the proxy. Null to disable this mechanism.
+     * @param args       an optional array of arguments that will be passed at the creation.
+     */
+    public ZProxy(ZContext ctx, String name, Proxy sockets, Pump pump, String motdelafin, Object... args)
     {
         super();
 
@@ -652,8 +726,7 @@ public class ZProxy
         int count = 1;
         count += args.length;
 
-        Object[] vars = null;
-        vars = new Object[count];
+        Object[] vars = new Object[count];
 
         vars[0] = sockets;
         Actor shadow = null;
@@ -674,13 +747,13 @@ public class ZProxy
             actor = new ZActor.Duo(actor, shadow);
         }
 
-        ZActor zactor = new ZActor(ctx, selector, actor, motdelafin, vars);
+        ZActor zactor = new ZActor(ctx, actor, motdelafin, vars);
         agent = zactor.agent(); // NB: the zactor is also its own agent
         exit = zactor.exit();
     }
 
     // defines a pump that will flow messages from one socket to another
-    public static interface Pump
+    public interface Pump
     {
         /**
          * Transfers a message from one source to one destination, with an optional capture.
@@ -693,8 +766,7 @@ public class ZProxy
          *
          * @return false in case of error or interruption, true if successfully transferred the message
          */
-        boolean flow(Plug src, Socket source, Socket capture,
-                Plug dst, Socket destination);
+        boolean flow(Plug src, Socket source, Socket capture, Plug dst, Socket destination);
     }
 
     // acts in background to proxy messages
@@ -703,6 +775,13 @@ public class ZProxy
         // the states container of the proxy
         private static final class State
         {
+            @Override
+            public String toString()
+            {
+                return "State [alive=" + alive + ", started=" + started + ", paused=" + paused + ", restart=" + restart
+                        + ", hot=" + hot + "]";
+            }
+
             // are we alive ?
             private boolean alive = false;
             // are we started ?
@@ -760,16 +839,16 @@ public class ZProxy
 
         // creates the sockets before the start of the proxy
         @Override
-        public List<Socket> createSockets(ZContext ctx, Object[] args)
+        public List<Socket> createSockets(ZContext ctx, Object... args)
         {
             provider = (Proxy) args[0];
 
             this.args = new Object[args.length - 1];
             System.arraycopy(args, 1, this.args, 0, this.args.length);
 
-            frontend = provider.create(ctx, Plug.FRONT,   this.args);
-            capture  = provider.create(ctx, Plug.CAPTURE, this.args);
-            backend  = provider.create(ctx, Plug.BACK,    this.args);
+            frontend = provider.create(ctx, Plug.FRONT, this.args);
+            capture = provider.create(ctx, Plug.CAPTURE, this.args);
+            backend = provider.create(ctx, Plug.BACK, this.args);
 
             assert (frontend != null);
             assert (backend != null);
@@ -794,11 +873,15 @@ public class ZProxy
             String cmd = pipe.recvStr();
             // a message has been received from the API
             if (START.equals(cmd)) {
-                start(poller);
-                return status().send(pipe);
+                if (start(poller)) {
+                    return status().send(pipe);
+                }
+                // unable to start the proxy, exit
+                state.restart = false;
+                return false;
             }
             else if (STOP.equals(cmd)) {
-                stop(poller);
+                stop();
                 return status().send(pipe);
             }
             else if (PAUSE.equals(cmd)) {
@@ -808,7 +891,7 @@ public class ZProxy
             else if (RESTART.equals(cmd)) {
                 String val = pipe.recvStr();
                 boolean hot = Boolean.parseBoolean(val);
-                return restart(pipe, poller, hot);
+                return restart(pipe, hot);
             }
             else if (STATUS.equals(cmd)) {
                 return status().send(pipe);
@@ -853,15 +936,25 @@ public class ZProxy
         // starts the proxy sockets
         private boolean start(ZPoller poller)
         {
+            boolean success = true;
             if (!state.started) {
-                state.started = true;
-
-                provider.configure(frontend, Plug.FRONT,   args);
-                provider.configure(backend,  Plug.BACK,    args);
-                provider.configure(capture,  Plug.CAPTURE, args);
+                try {
+                    success = false;
+                    success |= provider.configure(frontend, Plug.FRONT, args);
+                    success |= provider.configure(backend, Plug.BACK, args);
+                    success |= provider.configure(capture, Plug.CAPTURE, args);
+                    state.started = true;
+                }
+                catch (RuntimeException | IOException e) {
+                    e.printStackTrace();
+                    // unable to configure proxy, exit
+                    state.restart = false;
+                    state.started = false;
+                    return false;
+                }
             }
             pause(poller, false);
-            return true;
+            return success;
         }
 
         // pauses the proxy sockets
@@ -881,7 +974,7 @@ public class ZProxy
             return true;
         }
 
-        private boolean stop(ZPoller poller)
+        private boolean stop()
         {
             // restart the actor in stopped state
             state.started = false;
@@ -892,7 +985,7 @@ public class ZProxy
         }
 
         // handles the restart command in both modes
-        private boolean restart(Socket pipe, ZPoller poller, boolean hot)
+        private boolean restart(Socket pipe, boolean hot)
         {
             state.restart = true;
             if (hot) {
@@ -918,22 +1011,15 @@ public class ZProxy
 
         // a message has been received for the proxy to process
         @Override
-        public boolean stage(Socket socket, Socket pipe, ZPoller poller,
-                int events)
+        public boolean stage(Socket socket, Socket pipe, ZPoller poller, int events)
         {
             if (socket == frontend) {
                 //  Process a request.
-                return transport.flow(
-                        Plug.FRONT, frontend,
-                        capture,
-                        Plug.BACK, backend);
+                return transport.flow(Plug.FRONT, frontend, capture, Plug.BACK, backend);
             }
             if (socket == backend) {
                 //  Process a reply.
-                return transport.flow(
-                        Plug.BACK, backend,
-                        capture,
-                        Plug.FRONT, frontend);
+                return transport.flow(Plug.BACK, backend, capture, Plug.FRONT, frontend);
             }
             return false;
         }
@@ -952,18 +1038,25 @@ public class ZProxy
                     state.hot = null;
 
                     // we perform a cold restart if the provider says so
-                    boolean cold = false;
+                    boolean cold;
                     ZMsg dup = cfg.duplicate();
 
-                    cold = provider.restart(dup, frontend, Plug.FRONT, this.args);
-                    dup.destroy();
-                    dup = cfg.duplicate();
-                    cold |= provider.restart(dup, backend,  Plug.BACK,    this.args);
-                    dup.destroy();
-                    dup = cfg.duplicate();
-                    cold |= provider.restart(dup, capture,  Plug.CAPTURE, this.args);
-                    dup.destroy();
-                    cfg.destroy();
+                    try {
+                        cold = provider.restart(dup, frontend, Plug.FRONT, this.args);
+                        dup.destroy();
+                        dup = cfg.duplicate();
+                        cold |= provider.restart(dup, backend, Plug.BACK, this.args);
+                        dup.destroy();
+                        dup = cfg.duplicate();
+                        cold |= provider.restart(dup, capture, Plug.CAPTURE, this.args);
+                        dup.destroy();
+                        cfg.destroy();
+                    }
+                    catch (RuntimeException | IOException e) {
+                        e.printStackTrace();
+                        state.restart = false;
+                        return false;
+                    }
 
                     // cold restart means the loop has to stop.
                     return !cold;
@@ -999,7 +1092,7 @@ public class ZProxy
         private final Transformer transformer;
 
         // transforms one message into another
-        public static interface Transformer
+        public interface Transformer
         {
             /**
              * Transforms a ZMsg into another ZMsg.
@@ -1035,10 +1128,9 @@ public class ZProxy
         }
 
         @Override
-        public boolean flow(Plug splug, Socket source, Socket capture,
-                            Plug dplug, Socket destination)
+        public boolean flow(Plug splug, Socket source, Socket capture, Plug dplug, Socket destination)
         {
-            boolean success = false;
+            boolean success;
 
             // we read the whole message
             ZMsg msg = ZMsg.recvMsg(source);
@@ -1052,7 +1144,7 @@ public class ZProxy
                 // TODO what if the transformer modifies or destroys the original message ?
                 ZMsg cpt = transformer.transform(msg, splug, Plug.CAPTURE);
 
-//                boolean destroy = !msg.equals(cpt); // TODO ?? which one
+                //                boolean destroy = !msg.equals(cpt); // TODO ?? which one
                 boolean destroy = msg != cpt;
                 success = cpt.send(capture, destroy);
                 if (!success) {
@@ -1079,8 +1171,7 @@ public class ZProxy
     {
         // transfers each message as a whole by sending each packet received to the capture socket
         @Override
-        public boolean flow(Plug splug, Socket source, Socket capture,
-                Plug dplug, Socket destination)
+        public boolean flow(Plug splug, Socket source, Socket capture, Plug dplug, Socket destination)
         {
             boolean rc;
 

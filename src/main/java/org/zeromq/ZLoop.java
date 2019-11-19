@@ -1,30 +1,14 @@
-/*
-    Copyright (c) 2007-2014 Contributors as noted in the AUTHORS file
-
-    This file is part of 0MQ.
-
-    0MQ is free software; you can redistribute it and/or modify it under
-    the terms of the GNU Lesser General Public License as published by
-    the Free Software Foundation; either version 3 of the License, or
-    (at your option) any later version.
-
-    0MQ is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Lesser General Public License for more details.
-
-    You should have received a copy of the GNU Lesser General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
 package org.zeromq;
 
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
+import org.zeromq.ZMQ.Context;
 import org.zeromq.ZMQ.PollItem;
 import org.zeromq.ZMQ.Poller;
+
+import zmq.util.Objects;
 
 /**
  * The ZLoop class provides an event-driven reactor pattern. The reactor
@@ -42,10 +26,10 @@ public class ZLoop
 
     private class SPoller
     {
-        PollItem item;
+        PollItem      item;
         IZLoopHandler handler;
-        Object arg;
-        int errors;                 //  If too many errors, kill poller
+        Object        arg;
+        int           errors; //  If too many errors, kill poller
 
         protected SPoller(PollItem item, IZLoopHandler handler, Object arg)
         {
@@ -55,18 +39,17 @@ public class ZLoop
             errors = 0;
         }
 
-    };
+    }
 
     private class STimer
     {
-        int delay;
-        int times;
+        int           delay;
+        int           times;
         IZLoopHandler handler;
-        Object arg;
-        long when;               //  Clock time when alarm goes off
+        Object        arg;
+        long          when;   //  Clock time when alarm goes off
 
-        public STimer(int delay, int times, IZLoopHandler handler,
-                      Object arg)
+        public STimer(int delay, int times, IZLoopHandler handler, Object arg)
         {
             this.delay = delay;
             this.times = times;
@@ -77,24 +60,37 @@ public class ZLoop
 
     }
 
-    private final List<SPoller> pollers;        //  List of poll items
-    private final List<STimer> timers;          //  List of timers
-    private int pollSize;                       //  Size of poll set
-    private Poller pollset;                     //  zmq_poll set
-    private SPoller[] pollact;                  //  Pollers for this poll set
-    private boolean dirty;                      //  True if pollset needs rebuilding
-    private boolean verbose;                    //  True if verbose tracing wanted
-    private final List<Object> zombies;         //  List of timers to kill
-    private final List<STimer> newTimers;       //  List of timers to add
+    private final Context       context;   //  Context managing the pollers.
+    private final List<SPoller> pollers;   //  List of poll items
+    private final List<STimer>  timers;    //  List of timers
+    private int                 pollSize;  //  Size of poll set
+    private Poller              pollset;   //  zmq_poll set
+    private SPoller[]           pollact;   //  Pollers for this poll set
+    private boolean             dirty;     //  True if pollset needs rebuilding
+    private boolean             verbose;   //  True if verbose tracing wanted
+    private final List<Object>  zombies;   //  List of timers to kill
+    private final List<STimer>  newTimers; //  List of timers to add
 
-    public ZLoop()
+    public ZLoop(Context context)
     {
-        pollers = new ArrayList<SPoller>();
-        timers = new ArrayList<STimer>();
-        zombies = new ArrayList<Object>();
-        newTimers = new ArrayList<STimer>();
+        Objects.requireNonNull(context, "Context has to be supplied for ZLoop");
+        this.context = context;
+
+        pollers = new ArrayList<>();
+        timers = new ArrayList<>();
+        zombies = new ArrayList<>();
+        newTimers = new ArrayList<>();
     }
 
+    public ZLoop(ZContext ctx)
+    {
+        this(ctx.getContext());
+    }
+
+    /**
+     * @deprecated no-op behaviour
+     */
+    @Deprecated
     public void destroy()
     {
         // do nothing
@@ -109,7 +105,11 @@ public class ZLoop
         pollact = null;
 
         pollSize = pollers.size();
-        pollset = new Poller(pollSize);
+        if (pollset != null) {
+            pollset.close();
+        }
+        pollset = context.poller(pollSize);
+        assert (pollset != null);
 
         pollact = new SPoller[pollSize];
 
@@ -160,9 +160,11 @@ public class ZLoop
 
         dirty = true;
         if (verbose) {
-            System.out.printf("I: zloop: register %s poller (%s, %s)\n",
-                    pollItem.getSocket() != null ? pollItem.getSocket().getType() : "RAW",
-                    pollItem.getSocket(), pollItem.getRawSocket());
+            System.out.printf(
+                              "I: zloop: register %s poller (%s, %s)\n",
+                              pollItem.getSocket() != null ? pollItem.getSocket().getType() : "RAW",
+                                      pollItem.getSocket(),
+                                      pollItem.getRawSocket());
         }
         return 0;
     }
@@ -183,9 +185,11 @@ public class ZLoop
             }
         }
         if (verbose) {
-            System.out.printf("I: zloop: cancel %s poller (%s, %s)",
-                    pollItem.getSocket() != null ? pollItem.getSocket().getType() : "RAW",
-                    pollItem.getSocket(), pollItem.getRawSocket());
+            System.out.printf(
+                              "I: zloop: cancel %s poller (%s, %s)",
+                              pollItem.getSocket() != null ? pollItem.getSocket().getType() : "RAW",
+                                      pollItem.getSocket(),
+                                      pollItem.getRawSocket());
         }
 
     }
@@ -217,7 +221,7 @@ public class ZLoop
 
     public int removeTimer(Object arg)
     {
-        assert (arg != null);
+        Objects.requireNonNull(arg, "Argument has to be supplied");
 
         //  We cannot touch self->timers because we may be executing that
         //  from inside the poll loop. So, we hold the arg on the zombie
@@ -272,7 +276,7 @@ public class ZLoop
                     System.out.printf("I: zloop: interrupted (%d)\n", rc);
                 }
                 rc = 0;
-                break;              //  Context has been shut down
+                break; //  Context has been shut down
             }
             //  Handle any timers that have now expired
             Iterator<STimer> it = timers.iterator();
@@ -284,7 +288,7 @@ public class ZLoop
                     }
                     rc = timer.handler.handle(this, null, timer.arg);
                     if (rc == -1) {
-                        break;      //  Timer handler signalled break
+                        break; //  Timer handler signaled break
                     }
                     if (timer.times != 0 && --timer.times == 0) {
                         it.remove();
@@ -303,9 +307,11 @@ public class ZLoop
                 SPoller poller = pollact[itemNbr];
                 if (pollset.getItem(itemNbr).isError()) {
                     if (verbose) {
-                        System.out.printf("I: zloop: can't poll %s socket (%s, %s)\n",
-                                poller.item.getSocket() != null ? poller.item.getSocket().getType() : "RAW",
-                                poller.item.getSocket(), poller.item.getRawSocket());
+                        System.out.printf(
+                                          "I: zloop: can't poll %s socket (%s, %s)\n",
+                                          poller.item.getSocket() != null ? poller.item.getSocket().getType() : "RAW",
+                                                  poller.item.getSocket(),
+                                                  poller.item.getRawSocket());
                     }
                     //  Give handler one chance to handle error, then kill
                     //  poller because it'll disrupt the reactor otherwise.
@@ -314,18 +320,20 @@ public class ZLoop
                     }
                 }
                 else {
-                    poller.errors = 0;     //  A non-error happened
+                    poller.errors = 0; //  A non-error happened
                 }
 
                 if (pollset.getItem(itemNbr).readyOps() > 0) {
                     if (verbose) {
-                        System.out.printf("I: zloop: call %s socket handler (%s, %s)\n",
-                                poller.item.getSocket() != null ? poller.item.getSocket().getType() : "RAW",
-                                poller.item.getSocket(), poller.item.getRawSocket());
+                        System.out.printf(
+                                          "I: zloop: call %s socket handler (%s, %s)\n",
+                                          poller.item.getSocket() != null ? poller.item.getSocket().getType() : "RAW",
+                                                  poller.item.getSocket(),
+                                                  poller.item.getRawSocket());
                     }
                     rc = poller.handler.handle(this, poller.item, poller.arg);
                     if (rc == -1) {
-                        break;      //  Poller handler signalled break
+                        break; //  Poller handler signaled break
                     }
                 }
             }
@@ -341,7 +349,6 @@ public class ZLoop
                     }
                 }
             }
-            zombies.clear();
             //  Now handle any new timers added inside the loop
             timers.addAll(newTimers);
             newTimers.clear();

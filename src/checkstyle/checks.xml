@@ -7,10 +7,10 @@
     <module name="NewlineAtEndOfFile">
         <property name="lineSeparator" value="lf"/>
     </module>
-    <module name="RegexpMultiline">
+    <!-- module name="RegexpMultiline">
         <property name="format" value="\r"/>
         <property name="message" value="Line contains carriage return"/>
-    </module>
+    </module -->
     <module name="RegexpMultiline">
         <property name="format" value=" \n"/>
         <property name="message" value="Line has trailing whitespace"/>
@@ -115,5 +115,11 @@
                 PLUS, PLUS_ASSIGN, QUESTION, SL, SLIST, SL_ASSIGN, SR, SR_ASSIGN,
                 STAR, STAR_ASSIGN, TYPE_EXTENSION_AND"/>
         </module>
+		<module name="IllegalImport">
+			<property name="illegalPkgs"
+				value="java.util.function, java.util.stream" />
+			<property name="illegalClasses"
+				value="java.util.Objects, java.util.Optional" />
+		</module>
     </module>
 </module>

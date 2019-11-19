@@ -1,27 +1,4 @@
-/*
-    Copyright (c) 2007-2014 Contributors as noted in the AUTHORS file
-
-    This file is part of 0MQ.
-
-    0MQ is free software; you can redistribute it and/or modify it under
-    the terms of the GNU Lesser General Public License as published by
-    the Free Software Foundation; either version 3 of the License, or
-    (at your option) any later version.
-
-    0MQ is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Lesser General Public License for more details.
-
-    You should have received a copy of the GNU Lesser General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
 package guide;
-
-import org.zeromq.ZContext;
-import org.zeromq.ZMQ;
-import org.zeromq.ZMQ.Socket;
 
 import java.nio.ByteBuffer;
 import java.util.HashMap;
@@ -30,10 +7,15 @@ import java.util.Map.Entry;
 import java.util.Properties;
 import java.util.UUID;
 
+import org.zeromq.SocketType;
+import org.zeromq.ZContext;
+import org.zeromq.ZMQ;
+import org.zeromq.ZMQ.Socket;
+
 public class kvmsg
 {
     //  Keys are short strings
-    private static final int KVMSG_KEY_MAX  = 255;
+    private static final int KVMSG_KEY_MAX = 255;
 
     //  Message is formatted on wire as 4 frames:
     //  frame 0: getKey (0MQ string)
@@ -41,12 +23,12 @@ public class kvmsg
     //  frame 2: uuid (blob, 16 bytes)
     //  frame 3: properties (0MQ string)
     //  frame 4: body (blob)
-    private static final int FRAME_KEY      = 0;
-    private static final int FRAME_SEQ      = 1;
-    private static final int FRAME_UUID     = 2;
-    private static final int FRAME_PROPS    = 3;
-    private static final int FRAME_BODY     = 4;
-    private static final int KVMSG_FRAMES   = 5;
+    private static final int FRAME_KEY    = 0;
+    private static final int FRAME_SEQ    = 1;
+    private static final int FRAME_UUID   = 2;
+    private static final int FRAME_PROPS  = 3;
+    private static final int FRAME_BODY   = 4;
+    private static final int KVMSG_FRAMES = 5;
 
     //  Presence indicators for each frame
     private boolean[] present = new boolean[KVMSG_FRAMES];
@@ -56,7 +38,7 @@ public class kvmsg
     private String key;
     //  List of properties, as name=value strings
     private Properties props;
-    private int props_size;
+    private int        props_size;
 
     //  .split property encoding
     //  These two helpers serialize a list of properties to and from a
@@ -65,7 +47,7 @@ public class kvmsg
     private void encodeProps()
     {
         ByteBuffer msg = ByteBuffer.allocate(props_size);
-        for (Entry<Object, Object> o: props.entrySet()) {
+        for (Entry<Object, Object> o : props.entrySet()) {
             String prop = o.getKey().toString() + "=" + o.getValue().toString() + "\n";
             msg.put(prop.getBytes(ZMQ.CHARSET));
         }
@@ -83,12 +65,11 @@ public class kvmsg
             return;
 
         System.out.println("" + msg.length + " :" + new String(msg, ZMQ.CHARSET));
-        for (String prop: new String(msg, ZMQ.CHARSET).split("\n")) {
+        for (String prop : new String(msg, ZMQ.CHARSET).split("\n")) {
             String[] split = prop.split("=");
             props.setProperty(split[0], split[1]);
         }
     }
-
 
     //  .split constructor and destructor
     //  Here are the constructor and destructor for the class:
@@ -124,7 +105,7 @@ public class kvmsg
                 break;
             }
             //  Verify multipart framing
-            boolean rcvmore = (frameNbr < KVMSG_FRAMES - 1)? true: false;
+            boolean rcvmore = (frameNbr < KVMSG_FRAMES - 1) ? true : false;
             if (socket.hasReceiveMore() != rcvmore) {
                 self.destroy();
                 break;
@@ -134,6 +115,7 @@ public class kvmsg
         self.decodeProps();
         return self;
     }
+
     //  Send getKey-value message to socket; any empty frames are sent as such.
     public void send(Socket socket)
     {
@@ -147,7 +129,7 @@ public class kvmsg
             byte[] copy = ZMQ.MESSAGE_SEPARATOR;
             if (present[frameNbr])
                 copy = frame[frameNbr];
-            socket.send(copy, (frameNbr < KVMSG_FRAMES - 1)? ZMQ.SNDMORE: 0);
+            socket.send(copy, (frameNbr < KVMSG_FRAMES - 1) ? ZMQ.SNDMORE : 0);
         }
     }
 
@@ -162,8 +144,7 @@ public class kvmsg
         for (frameNbr = 0; frameNbr < KVMSG_FRAMES; frameNbr++) {
             if (present[frameNbr]) {
                 kvmsg.frame[frameNbr] = new byte[frame[frameNbr].length];
-                System.arraycopy(frame[frameNbr], 0,
-                        kvmsg.frame[frameNbr], 0, frame[frameNbr].length);
+                System.arraycopy(frame[frameNbr], 0, kvmsg.frame[frameNbr], 0, frame[frameNbr].length);
                 kvmsg.present[frameNbr] = true;
             }
         }
@@ -188,8 +169,7 @@ public class kvmsg
             }
             return key;
         }
-        else
-            return null;
+        else return null;
     }
 
     //  Set message getKey as provided
@@ -202,7 +182,7 @@ public class kvmsg
     }
 
     //  Set message getKey using printf format
-    public void fmtKey(String fmt, Object ... args)
+    public void fmtKey(String fmt, Object... args)
     {
         setKey(String.format(fmt, args));
     }
@@ -215,8 +195,7 @@ public class kvmsg
             ByteBuffer source = ByteBuffer.wrap(frame[FRAME_SEQ]);
             return source.getLong();
         }
-        else
-            return 0;
+        else return 0;
     }
 
     //  Set message getSequence number
@@ -235,8 +214,7 @@ public class kvmsg
     {
         if (present[FRAME_BODY])
             return frame[FRAME_BODY];
-        else
-            return null;
+        else return null;
     }
 
     //  Set message body
@@ -244,7 +222,7 @@ public class kvmsg
     {
         byte[] msg = new byte[body.length];
         System.arraycopy(body, 0, msg, 0, body.length);
-        frame [FRAME_BODY] = msg;
+        frame[FRAME_BODY] = msg;
         present[FRAME_BODY] = true;
     }
 
@@ -259,8 +237,7 @@ public class kvmsg
     {
         if (present[FRAME_BODY])
             return frame[FRAME_BODY].length;
-        else
-            return 0;
+        else return 0;
     }
     //  .until
 
@@ -270,8 +247,7 @@ public class kvmsg
     {
         if (present[FRAME_UUID])
             return frame[FRAME_UUID];
-        else
-            return null;
+        else return null;
     }
 
     //  Sets the UUID to a randomly generated value
@@ -293,14 +269,13 @@ public class kvmsg
 
     //  Set message property. Property name cannot contain '='. Max length of
     //  value is 255 chars.
-    public void setProp(String name, String fmt, Object ... args)
+    public void setProp(String name, String fmt, Object... args)
     {
         String value = String.format(fmt, args);
         Object old = props.setProperty(name, value);
         if (old != null)
             props_size -= old.toString().length();
-        else
-            props_size += name.length() + 2;
+        else props_size += name.length() + 2;
         props_size += value.length();
     }
 
@@ -315,8 +290,8 @@ public class kvmsg
             if (present[FRAME_KEY] && present[FRAME_BODY]) {
                 hash.put(getKey(), this);
             }
-        } else
-            hash.remove(getKey());
+        }
+        else hash.remove(getKey());
     }
 
     //  .split dump method
@@ -332,7 +307,7 @@ public class kvmsg
         //  .until
         System.err.printf("[size:%d] ", size);
         System.err.printf("[");
-        for (String key: props.stringPropertyNames()) {
+        for (String key : props.stringPropertyNames()) {
             System.err.printf("%s=%s;", key, props.getProperty(key));
         }
         System.err.printf("]");
@@ -353,58 +328,54 @@ public class kvmsg
         System.out.printf(" * kvmsg: ");
 
         //  Prepare our context and sockets
-        ZContext ctx = new ZContext();
-        Socket output = ctx.createSocket(ZMQ.DEALER);
-        output.bind("ipc://kvmsg_selftest.ipc");
-        Socket input = ctx.createSocket(ZMQ.DEALER);
-        input.connect("ipc://kvmsg_selftest.ipc");
+        try (ZContext ctx = new ZContext()) {
+            Socket output = ctx.createSocket(SocketType.DEALER);
+            output.bind("ipc://kvmsg_selftest.ipc");
+            Socket input = ctx.createSocket(SocketType.DEALER);
+            input.connect("ipc://kvmsg_selftest.ipc");
 
-        Map<String,kvmsg> kvmap = new HashMap<String, kvmsg>();
+            Map<String, kvmsg> kvmap = new HashMap<String, kvmsg>();
 
-        //  .until
-        //  Test send and receive of simple message
-        kvmsg kvmsg = new kvmsg(1);
-        kvmsg.setKey("getKey");
-        kvmsg.setUUID();
-        kvmsg.setBody("body".getBytes(ZMQ.CHARSET));
-        if (verbose)
-            kvmsg.dump();
-        kvmsg.send(output);
-        kvmsg.store(kvmap);
+            //  .until
+            //  Test send and receive of simple message
+            kvmsg kvmsg = new kvmsg(1);
+            kvmsg.setKey("getKey");
+            kvmsg.setUUID();
+            kvmsg.setBody("body".getBytes(ZMQ.CHARSET));
+            if (verbose)
+                kvmsg.dump();
+            kvmsg.send(output);
+            kvmsg.store(kvmap);
 
-        kvmsg = kvmsg.recv(input);
-        if (verbose)
-            kvmsg.dump();
-        assert (kvmsg.getKey().equals("getKey"));
-        kvmsg.store(kvmap);
+            kvmsg = guide.kvmsg.recv(input);
+            if (verbose)
+                kvmsg.dump();
+            assert (kvmsg.getKey().equals("getKey"));
+            kvmsg.store(kvmap);
 
-        //  Test send and receive of message with properties
-        kvmsg = new kvmsg(2);
-        kvmsg.setProp("prop1", "value1");
-        kvmsg.setProp("prop2", "value1");
-        kvmsg.setProp("prop2", "value2");
-        kvmsg.setKey("getKey");
-        kvmsg.setUUID();
-        kvmsg.setBody("body".getBytes(ZMQ.CHARSET));
-        assert (kvmsg.getProp("prop2").equals("value2"));
-        if (verbose)
-            kvmsg.dump();
-        kvmsg.send(output);
-        kvmsg.destroy();
+            //  Test send and receive of message with properties
+            kvmsg = new kvmsg(2);
+            kvmsg.setProp("prop1", "value1");
+            kvmsg.setProp("prop2", "value1");
+            kvmsg.setProp("prop2", "value2");
+            kvmsg.setKey("getKey");
+            kvmsg.setUUID();
+            kvmsg.setBody("body".getBytes(ZMQ.CHARSET));
+            assert (kvmsg.getProp("prop2").equals("value2"));
+            if (verbose)
+                kvmsg.dump();
+            kvmsg.send(output);
+            kvmsg.destroy();
 
-        kvmsg = kvmsg.recv(input);
-        if (verbose)
-            kvmsg.dump();
-        assert (kvmsg.key.equals("getKey"));
-        assert (kvmsg.getProp("prop2").equals("value2"));
-        kvmsg.destroy();
-
-        //  .skip
-        //  Shutdown and destroy all objects
-        ctx.destroy();
+            kvmsg = guide.kvmsg.recv(input);
+            if (verbose)
+                kvmsg.dump();
+            assert (kvmsg.key.equals("getKey"));
+            assert (kvmsg.getProp("prop2").equals("value2"));
+            kvmsg.destroy();
+        }
 
         System.out.printf("OK\n");
-
     }
     //  .until
 }

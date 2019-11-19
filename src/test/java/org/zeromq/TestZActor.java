@@ -9,20 +9,18 @@ import org.junit.Test;
 import org.zeromq.ZActor.Actor;
 import org.zeromq.ZMQ.Socket;
 
-import zmq.ZError;
-
 public class TestZActor
 {
     @Test
     public void testMinimalistic()
     {
-        Actor acting = new ZActor.SimpleActor()
+        final Actor acting = new ZActor.SimpleActor()
         {
             @Override
-            public List<Socket> createSockets(ZContext ctx, Object[] args)
+            public List<Socket> createSockets(ZContext ctx, Object... args)
             {
                 assert ("TEST".equals(args[0]));
-                return Arrays.asList(ctx.createSocket(ZMQ.PUB));
+                return Arrays.asList(ctx.createSocket(SocketType.PUB));
             }
 
             @Override
@@ -39,9 +37,10 @@ public class TestZActor
                 return true;
             }
         };
-        ZContext context = new ZContext();
-        ZActor actor = new ZActor(context, new ZAgent.VerySimpleSelectorCreator(), acting, "LOCK", Arrays.asList("TEST").toArray());
-        Socket pipe = actor.pipe();
+        final ZContext context = new ZContext();
+        final ZActor.Duo duo = new ZActor.Duo(acting, new ZActor.SimpleActor());
+        final ZActor actor = new ZActor(context, duo, "LOCK", Arrays.asList("TEST").toArray());
+        final Socket pipe = actor.pipe();
         boolean rc = pipe.send("HELLO");
         Assert.assertTrue("Unable to send a message through pipe", rc);
         ZMsg msg = actor.recv();
@@ -61,18 +60,10 @@ public class TestZActor
         rc = actor.send("whatever");
         Assert.assertFalse("Able to send a message to a locked actor", rc);
 
-        try {
-            rc = pipe.send("boom ?!");
-            Assert.assertTrue("actor pipe was closed pretty fast", rc);
-        }
-        catch (ZMQException e) {
-            int errno = e.getErrorCode();
-            Assert.assertEquals("Expected exception has the wrong code",  ZError.ETERM, errno);
-        }
-
         context.close();
         System.out.println(".");
     }
+
     @Test
     public void testRecreateAgent()
     {
@@ -81,7 +72,7 @@ public class TestZActor
             private int counter = 0;
 
             @Override
-            public List<Socket> createSockets(ZContext ctx, Object[] args)
+            public List<Socket> createSockets(ZContext ctx, Object... args)
             {
                 ++counter;
                 System.out.print(".Acting Ready for a hello world.");
@@ -114,7 +105,7 @@ public class TestZActor
             }
         };
         ZContext context = new ZContext();
-        ZActor actor = new ZActor(context, new ZAgent.VerySimpleSelectorCreator(), acting, UUID.randomUUID().toString(), Arrays.asList("TEST").toArray());
+        ZActor actor = new ZActor(context, acting, UUID.randomUUID().toString(), Arrays.asList("TEST").toArray());
         ZAgent agent = actor.agent();
 
         agent = actor;
@@ -147,15 +138,6 @@ public class TestZActor
 
         rc = agent.send("whatever");
         Assert.assertFalse("Able to send a message to a locked actor", rc);
-
-        try {
-            rc = pipe.send("boom ?!");
-            Assert.assertTrue("actor pipe was closed pretty fast", rc);
-        }
-        catch (ZMQException e) {
-            int errno = e.getErrorCode();
-            Assert.assertEquals("Expected exception has the wrong code",  ZError.ETERM, errno);
-        }
 
         context.close();
 

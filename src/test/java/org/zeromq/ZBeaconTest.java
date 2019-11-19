@@ -1,42 +1,54 @@
-/*
-    Copyright (c) 2007-2014 Contributors as noted in the AUTHORS file
-
-    This file is part of 0MQ.
-
-    0MQ is free software; you can redistribute it and/or modify it under
-    the terms of the GNU Lesser General Public License as published by
-    the Free Software Foundation; either version 3 of the License, or
-    (at your option) any later version.
-
-    0MQ is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Lesser General Public License for more details.
-
-    You should have received a copy of the GNU Lesser General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
- */
-
 package org.zeromq;
 
-import java.net.InetAddress;
+import static org.hamcrest.CoreMatchers.is;
+import static org.junit.Assert.assertThat;
 
-import org.junit.Test;
-import org.zeromq.ZBeacon.Listener;
+import java.io.IOException;
+import java.net.InetAddress;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
-import static org.junit.Assert.assertEquals;
+import org.junit.Ignore;
+import org.junit.Test;
+import org.zeromq.ZBeacon.Listener;
 
 public class ZBeaconTest
 {
     @Test
-    public void test() throws InterruptedException
+    public void testUseBuilder() throws InterruptedException, IOException
+    {
+        final CountDownLatch latch = new CountDownLatch(1);
+        int port = Utils.findOpenPort();
+        ZBeacon.Builder builder = new ZBeacon.Builder().beacon(new byte[] { 'H', 'Y', 'D', 'R', 'A', 0x01, 0x12, 0x34 })
+                .ignoreLocalAddress(false).blocking(false).broadcastInterval(2000L).client("127.0.0.1").port(port)
+                .server(new byte[] { 0, 0, 0, 0 });
+        byte[] prefix = new byte[] { 'H', 'Y', 'D', 'R', 'A', 0x01 };
+        ZBeacon beacon = builder.build();
+        beacon.setPrefix(prefix);
+        beacon.setListener(new Listener()
+        {
+            @Override
+            public void onBeacon(InetAddress sender, byte[] beacon)
+            {
+                latch.countDown();
+            }
+        });
+
+        beacon.start();
+        latch.await(20, TimeUnit.SECONDS);
+        assertThat(latch.getCount(), is(0L));
+        beacon.stop();
+    }
+
+    @Test
+    public void testReceiveOwnBeacons() throws InterruptedException, IOException
     {
         final CountDownLatch latch = new CountDownLatch(1);
         byte[] beacon = new byte[] { 'H', 'Y', 'D', 'R', 'A', 0x01, 0x12, 0x34 };
         byte[] prefix = new byte[] { 'H', 'Y', 'D', 'R', 'A', 0x01 };
-        ZBeacon zbeacon = new ZBeacon("255.255.255.255", 5670, beacon, false);
+        int port = Utils.findOpenPort();
+        ZBeacon zbeacon = new ZBeacon("127.0.0.1", port, beacon, false);
         zbeacon.setPrefix(prefix);
         zbeacon.setListener(new Listener()
         {
@@ -49,7 +61,101 @@ public class ZBeaconTest
 
         zbeacon.start();
         latch.await(20, TimeUnit.SECONDS);
-        assertEquals(latch.getCount(), 0);
+        assertThat(latch.getCount(), is(0L));
         zbeacon.stop();
+    }
+
+    @Test
+    @Ignore
+    public void testIgnoreOwnBeacon() throws IOException, InterruptedException
+    {
+        final int port = Utils.findOpenPort();
+
+        final byte[] beacon = new byte[] { 'Z', 'R', 'E', 0x01, 0x2 };
+        final byte[] prefix = new byte[] { 'Z', 'R', 'E', 0x01 };
+        final ZBeacon zbeacon = new ZBeacon(ZBeacon.DEFAULT_BROADCAST_HOST, port, beacon, true);
+        zbeacon.setPrefix(prefix);
+
+        final AtomicLong counter = new AtomicLong();
+
+        zbeacon.setListener(new Listener()
+        {
+            @Override
+            public void onBeacon(InetAddress sender, byte[] beacon)
+            {
+                counter.incrementAndGet();
+                System.out.println(sender.toString());
+                try {
+                    System.out.println(InetAddress.getLocalHost().getHostAddress());
+                }
+                catch (Exception e) {
+                }
+                System.out.println(new String(beacon));
+            }
+        });
+        zbeacon.start();
+        zmq.ZMQ.sleep(1);
+        zbeacon.stop();
+
+        assertThat(counter.get(), is(0L));
+    }
+
+    @Test
+    public void testReceiveOwnBeaconsBlocking() throws InterruptedException, IOException
+    {
+        final CountDownLatch latch = new CountDownLatch(1);
+        byte[] beacon = new byte[] { 'H', 'Y', 'D', 'R', 'A', 0x01, 0x12, 0x34 };
+        byte[] prefix = new byte[] { 'H', 'Y', 'D', 'R', 'A', 0x01 };
+        int port = Utils.findOpenPort();
+        ZBeacon zbeacon = new ZBeacon("127.0.0.1", port, beacon, false, true);
+        zbeacon.setPrefix(prefix);
+        zbeacon.setListener(new Listener()
+        {
+            @Override
+            public void onBeacon(InetAddress sender, byte[] beacon)
+            {
+                latch.countDown();
+            }
+        });
+
+        zbeacon.start();
+        latch.await(20, TimeUnit.SECONDS);
+        assertThat(latch.getCount(), is(0L));
+        zbeacon.stop();
+    }
+
+    @Test
+    @Ignore
+    public void testIgnoreOwnBeaconBlocking() throws IOException, InterruptedException
+    {
+        final int port = Utils.findOpenPort();
+
+        final byte[] beacon = new byte[] { 'Z', 'R', 'E', 0x01, 0x2 };
+        final byte[] prefix = new byte[] { 'Z', 'R', 'E', 0x01 };
+        final ZBeacon zbeacon = new ZBeacon(ZBeacon.DEFAULT_BROADCAST_HOST, port, beacon, true, true);
+        zbeacon.setPrefix(prefix);
+
+        final AtomicLong counter = new AtomicLong();
+
+        zbeacon.setListener(new Listener()
+        {
+            @Override
+            public void onBeacon(InetAddress sender, byte[] beacon)
+            {
+                counter.incrementAndGet();
+                System.out.println(sender.toString());
+                try {
+                    System.out.println(InetAddress.getLocalHost().getHostAddress());
+                }
+                catch (Exception e) {
+                }
+                System.out.println(new String(beacon));
+            }
+        });
+        zbeacon.start();
+        zmq.ZMQ.sleep(1);
+        zbeacon.stop();
+
+        assertThat(counter.get(), is(0L));
     }
 }

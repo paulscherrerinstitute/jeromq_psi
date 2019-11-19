@@ -1,22 +1,3 @@
-/*
-    Copyright (c) 2007-2014 Contributors as noted in the AUTHORS file
-
-    This file is part of 0MQ.
-
-    0MQ is free software; you can redistribute it and/or modify it under
-    the terms of the GNU Lesser General Public License as published by
-    the Free Software Foundation; either version 3 of the License, or
-    (at your option) any later version.
-
-    0MQ is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Lesser General Public License for more details.
-
-    You should have received a copy of the GNU Lesser General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
- */
-
 package org.zeromq;
 
 import java.io.IOException;
@@ -26,7 +7,7 @@ import java.util.Arrays;
 import org.zeromq.ZMQ.Socket;
 
 /**
- * First implementation of an agent for a remotely controlled background service for 0MQ.
+ * First implementation of an agent for a remotely controlled background service for ØMQ.
  * Used in conjunction with a ZStar, but not mandatory.
  *<p>
  * An agent is a mechanism allowing to send messages from one thread to another, and to receive messages from this other thread.
@@ -51,10 +32,19 @@ public interface ZAgent
 
     /**
      * Receives a control message sent from the Plateau in the Corbeille.
+     * The call times out if there is no message after the elapsed time.
+     *
+     * @param timeout the timeout in milliseconds before returning null.
+     * @return the received message or null if the context was shut down or if no message after the timeout.
+     */
+    ZMsg recv(int timeout);
+
+    /**
+     * Receives a control message sent from the Plateau in the Corbeille.
      * The call is blocking depending on the parameter.
      *
      * @param wait   true to make a blocking call, false to not wait, and possibly return null
-     * @return the received message or null if the context was shut down or if no message if not blocking.
+     * @return the received message or null if the context was shut down or if there is no message when not blocking.
      */
     ZMsg recv(boolean wait);
 
@@ -100,13 +90,6 @@ public interface ZAgent
     boolean sign();
 
     /**
-     * Forcely destroys the Star.
-     * @deprecated not sure it is useful or recommended
-     */
-    @Deprecated
-    void nova();
-
-    /**
      * Returns the socket used for communication.
      * For advanced usage.
      *
@@ -114,8 +97,18 @@ public interface ZAgent
      */
     Socket pipe();
 
-    public static class Creator
+    /**
+     * Closes the pipe.
+     */
+    void close();
+
+    class Creator
     {
+        private Creator()
+        {
+            super();
+        }
+
         public static ZAgent create(Socket pipe, String lock)
         {
             return new SimpleAgent(pipe, lock);
@@ -155,9 +148,28 @@ public interface ZAgent
         }
 
         @Override
+        public void close()
+        {
+            locked = true;
+            pipe.close();
+        }
+
+        @Override
         public ZMsg recv()
         {
             return recv(true);
+        }
+
+        @Override
+        public ZMsg recv(int timeout)
+        {
+            final int old = pipe.getReceiveTimeOut();
+            pipe.setReceiveTimeOut(timeout);
+
+            ZMsg msg = recv(true);
+            pipe.setReceiveTimeOut(old);
+
+            return msg;
         }
 
         @Override
@@ -167,18 +179,20 @@ public interface ZAgent
                 return null;
             }
             try {
-                ZMsg msg = ZMsg.recvMsg(pipe, wait ? 0 : ZMQ.DONTWAIT);
+                ZMsg msg = ZMsg.recvMsg(pipe, wait);
                 if (msg == null) {
                     return null;
                 }
 
-                final ZFrame frame = msg.peek();
-                byte[] key = frame.getData();
-                if (lock != null && Arrays.equals(lock, key)) {
-                    locked = true;
-                    // this is the last message anyway, and not a one for a public display
-                    msg = null;
-                    pipe.close();
+                if (msg.size() == 1) {
+                    final ZFrame frame = msg.peek();
+                    byte[] key = frame.getData();
+                    if (lock != null && Arrays.equals(lock, key)) {
+                        locked = true;
+                        // this is the last message anyway, and not a one for a public display
+                        msg = null;
+                        pipe.close();
+                    }
                 }
                 return msg;
             }
@@ -229,50 +243,31 @@ public interface ZAgent
         {
             return pipe;
         }
-
-        @Override
-        public void nova()
-        {
-            pipe.close();
-        }
     }
 
     /**
      * Creates a selector and destroys it.
+     * @deprecated
      */
     // Contract for selector creation.
     // will be called in backstage side.
-    public static interface SelectorCreator
+    @Deprecated
+    interface SelectorCreator
     {
         /**
          * Creates and opens a selector.
          *
          * @return the opened selector.
+         * @throws IOException
          */
         Selector create() throws IOException;
 
         /**
          * Destroys the previously opened selector.
+         *
          * @param selector the selector to close
+         * @throws IOException
          */
         void destroy(Selector selector) throws IOException;
-    }
-
-    // very simple selector creator
-    public static class VerySimpleSelectorCreator implements SelectorCreator
-    {
-        @Override
-        public Selector create() throws IOException
-        {
-            return Selector.open();
-        }
-
-        @Override
-        public void destroy(Selector selector) throws IOException
-        {
-            if (selector != null) {
-                selector.close();
-            }
-        }
     }
 }

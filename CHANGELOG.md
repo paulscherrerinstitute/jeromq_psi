@@ -1,8 +1,356 @@
 # Changelog
 
-## v0.3.6
+## v0.5.0 (2019-02-18)
 
-## v0.3.5
+### Added
+
+* [#539](https://github.com/zeromq/jeromq/pull/539),
+  [#552](https://github.com/zeromq/jeromq/pull/552),
+  [#573](https://github.com/zeromq/jeromq/pull/573): Implemented heartbeating
+  between sockets as specified in
+  [https://rfc.zeromq.org/spec:37/ZMTP](https://rfc.zeromq.org/spec:37/ZMTP).
+
+* [#556](https://github.com/zeromq/jeromq/pull/556): There is now a `SocketType`
+  enum that can be used when creating sockets. This is recommended over the old
+  way of using integer values, which is error-prone. The overload of
+  `ZContext.createSocket` that takes an integer is still supported, but is now
+  marked deprecated.
+
+* [#559](https://github.com/zeromq/jeromq/pull/559): Added `recvStream` and
+  `recvStrStream` instance methods to the `ZMQ.Socket` class. These expose a
+  Stream of incoming messages, each of which is a `byte[]` or `String`,
+  respectively.
+
+* [#560](https://github.com/zeromq/jeromq/pull/560): ZMsg instance methods can
+  now be chained.
+
+* [#576](https://github.com/zeromq/jeromq/pull/576): Added an overload of
+  `ZMsg.recvMsg` that takes a `Consumer<ZMsg> handler` and a
+  `Consumer<ZMQException> exceptionHandler` for handling the result of
+  attempting to receive a message on a socket.
+
+* [#586](https://github.com/zeromq/jeromq/pull/586): Implemented a Timer API
+  based on the one added to libzmq in version 4.2.
+
+* [#590](https://github.com/zeromq/jeromq/pull/590): Added a `closeSelector`
+  method to the ZContext class, to expose a way for selectors created by
+  `createSelector` to be closed. Note that both of these methods are also
+  deprecated; it is not recommended to manage selectors directly, as these are
+  managed for you by pollers.
+
+* [#614](https://github.com/zeromq/jeromq/pull/614): Added a
+  `ZMQ_SELECTOR_PROVIDERCHOOSER` socket option that allows you to define a
+  custom
+  [SelectorProvider](https://docs.oracle.com/javase/8/docs/api/java/nio/channels/spi/SelectorProvider.html).
+
+### Changed
+
+* [**JeroMQ no longer supports Java
+  7.**](https://github.com/zeromq/jeromq/pull/557) Dropping support for Java 7
+  allows us to leverage the new features of Java 8, including the use of lambda
+  syntax to create IAttachedRunnable and IDetachedRunnable.
+
+* Refactored code to use Java 8 features like lambdas and streams in various
+  places. See [#570](https://github.com/zeromq/jeromq/pull/571) and
+  [#650](https://github.com/zeromq/jeromq/pull/650), for example.
+
+* [#510](https://github.com/zeromq/jeromq/pull/510): Polling now measures time
+  in nanoseconds instead of microseconds, ensuring a higher degree of precision.
+
+* [#523](https://github.com/zeromq/jeromq/pull/523): Fixed a bug where ZLoop was
+  closing the context.
+
+* [#525](https://github.com/zeromq/jeromq/pull/525): Fixed a bug in
+  `zmq.io.StreamEngine` that was causing an infinite loop in the IO thread,
+  blocking the application with 100% CPU usage.
+
+* [#527](https://github.com/zeromq/jeromq/pull/527): Fixed a bug in
+  `zmq.io.StreamEngine` where data could still be present inside the handshake
+  buffer that was not decoded.
+
+* [#535](https://github.com/zeromq/jeromq/pull/535): Fixed an edge case where,
+  once in a blue moon, after a socket fails to connect, and is subsequently
+  closed, it would still try to reconnect as if it weren't closed.
+
+* [#546](https://github.com/zeromq/jeromq/pull/546): Prior to this release, when
+  a ZContext was initialized, its internal `ZMQ.Context` would be null
+  initially, and the ZContext `isClosed` instance method would misleadingly
+  return `true`; the `ZMQ.Context` was being created lazily when `getContext`
+  was called on the ZContext. Worse, the internal context would be reset to
+  `null` after closing a ZContext, which could lead to problems if another
+  thread happened to try to use the ZContext after it was closed, resulting in a
+  new `ZMQ.Context` secretly being created. Now, the internal `ZMQ.Context` is
+  created upon initialization of the ZContext, and you can rely on it never
+  being null.
+
+* [#548](https://github.com/zeromq/jeromq/pull/550): Various javadoc updates and
+  improvements. There is now a `@Draft` annotation to identify work-in-progress
+  APIs that are unstable or experimental.
+
+* [#552](https://github.com/zeromq/jeromq/pull/552): Fixed a bug where internal
+  command messages (e.g. HEARTBEAT commands) were disrupting the REQ state
+  machine.
+
+* [#564](https://github.com/zeromq/jeromq/pull/564): Implemented the ability to
+  bind a socket via IPC or TCP with a dynamic ("wildcard") port and retrieve it
+  via `ZMQ.ZMQ_LAST_ENDPOINT`. Leveraged this to make our test suite more
+  reliable.
+
+* [#569](https://github.com/zeromq/jeromq/pull/569): Fixed an issue where an
+  overridable method was being used in the ZStar constructor.
+
+* [#578](https://github.com/zeromq/jeromq/pull/578): Fixed an issue where an
+  errno of 48 ("address already in use") would persist longer than intended
+  in the process of binding to a random port. Now, errno is reset to 0 after a
+  port is found.
+
+* [#581](https://github.com/zeromq/jeromq/pull/581): Fixed a bug where, if
+  you're polling in one thread and you close the context in another thread, it
+  would result in an uncaught ClosedSelectorException.
+
+* [#583](https://github.com/zeromq/jeromq/pull/583): Fixed a race condition
+  causing `ZMQ_CONNECT_RID` to sometimes be assigned to the wrong peer socket.
+
+* [#597](https://github.com/zeromq/jeromq/pull/597): Fixed a bug causing the
+  context to hang indefinitely after calling `destroy()`, if multiple sockets
+  had connected to the same socket.
+
+* [#609](https://github.com/zeromq/jeromq/pull/609): For numerous methods, when
+  invalid arguments are passed to the method, an InvalidArgumentException with a
+  friendly error message will now be thrown, instead of an assertion error.
+
+* [#610](https://github.com/zeromq/jeromq/pull/610): Added some asserts in
+  places where there could potentially be NullPointerExceptions.
+
+* [#623](https://github.com/zeromq/jeromq/pull/623): `Options.rcvbuf` and
+  `Options.sndbuf` will now adjust `Config.IN_BATCH_SIZE` and
+  `Config.OUT_BATCH_SIZE` accordingly.
+
+* [#634](https://github.com/zeromq/jeromq/pull/634): We are now using a 64-bit
+  long, instead of a 32-bit integer, as a cursor in the internal
+  `java.zmq.Signaler` class. This change should not affect the library user,
+  except that it will now take longer for the value to overflow. Previously,
+  with the 32-bit integer cursor, the Signaler could overflow within a month or
+  so under heavy load, causing serious problems such as a server being unable to
+  accept new client connections.
+
+* [#642](https://github.com/zeromq/jeromq/pull/642),
+  [#646](https://github.com/zeromq/jeromq/pull/646),
+  [#652](https://github.com/zeromq/jeromq/pull/652): Removed debug printing
+  intended for development use only.
+
+* [#643](https://github.com/zeromq/jeromq/pull/643): Added some checks in parts
+  of the codebase related to encryption and authentication mechanisms.
+
+* [#652](https://github.com/zeromq/jeromq/pull/652): IOExceptions that occur
+  during polling will now set `errno` more accurately depending on the
+  exception. Previously, the `errno` would always be set to `EINTR` when an
+  IOException occurs during polling.
+
+* [#653](https://github.com/zeromq/jeromq/pull/653): `ZError.toString` now
+  defaults to `"errno " + Integer.toString(code)` if a string version of that
+  error code hasn't been implemented.
+
+* [#654](https://github.com/zeromq/jeromq/pull/654): In a low-level place where
+	an `IllegalStateException` was thrown with no arguments before, the string
+  value of the `errno` is now included to provide some context.
+
+* [#655](https://github.com/zeromq/jeromq/pull/655): In a low-level place in
+  the polling code, `EINTR` is now correctly reported to indicate that polling
+  was interrupted, whereas we used to miss it and try to poll again.
+
+* [#657](https://github.com/zeromq/jeromq/pull/657): When destroying a ZPoller,
+  we will no longer close the poller's Selector, as that is handled by the
+  context.
+
+* [#659](https://github.com/zeromq/jeromq/pull/659): Made internal
+  optimizations to ZContext. The only visible change should be that the order of
+  the sockets when you call `getSockets()` is no longer deterministic, as we are
+  now storing them internally in a Set rather than a List.
+
+* [#660](https://github.com/zeromq/jeromq/pull/660): When creating a socket and
+  the `maxSockets` limit is reached, a ZMQException is now thrown instead of the
+  more generic IllegalStateException.
+
+## v0.4.3 (2017-11-17)
+
+### Added
+
+* [#470](https://github.com/zeromq/jeromq/pull/470): Added an argument to the
+  ZBeacon constructor to configure datagram socket blocking behavior. The
+  default behavior (non-blocking) is preserved when the argument is omitted.
+
+* [#474](https://github.com/zeromq/jeromq/pull/474),
+  [#475](https://github.com/zeromq/jeromq/pull/475),
+  [#477](https://github.com/zeromq/jeromq/pull/477),
+  [#479](https://github.com/zeromq/jeromq/pull/479) Added features:
+  * ZAuth, an actor that manages authentication and handles ZAP requests.
+  * ZCert, an abstraction for CURVE certificates.
+  * ZCertStore, a sub-optimal store for certificates.
+  * ZConfig, to manage the ZPL file format.
+  * ZMonitor, for simplified socket monitoring.
+  * Reinstated support for the `ZMQ_MSG_ALLOCATOR` option. Added a
+    `setMsgAllocator` method in the ZMQ class for setting a custom message
+    allocator.
+
+* [#477](https://github.com/zeromq/jeromq/pull/477): Added an overload of
+  `ZAgent.recv` that takes a timeout argument.
+
+* [#498](https://github.com/zeromq/jeromq/pull/498): Implemented `Closable` for
+  `ZMQ.Poller`, providing a way to call `.close()` on a poller when you're done
+  with it and free the selector resource to avoid memory leaks.
+
+  It is recommended that you either close a poller or terminate the context when
+  you are done polling.
+
+### Changed
+
+* Miscellaneous Javadoc documentation tweaks/fixes.
+
+* [#453](https://github.com/zeromq/jeromq/pull/453),
+  [#462](https://github.com/zeromq/jeromq/pull/462),
+  [#471](https://github.com/zeromq/jeromq/pull/471): Fixed Android-specific
+  compilation issues.
+
+* [#454](https://github.com/zeromq/jeromq/pull/454): Fixed an issue where the
+  router was interpreting peers' socket identities as UTF-8 strings instead of
+  raw bytes.
+
+* [#460](https://github.com/zeromq/jeromq/pull/460): Fixed an issue where CURVE
+  keys were being parsed as strings.
+
+* [#461](https://github.com/zeromq/jeromq/pull/461),
+  [#501](https://github.com/zeromq/jeromq/pull/501): Fixed protocol handshake
+  issues that were causing interoperability problems between applications using
+  different versions of ZeroMQ/JeroMQ.
+
+* [#465](https://github.com/zeromq/jeromq/pull/465) Various small fixes:
+  * Fixed an uncaught divide by zero exception
+    ([#447](https://github.com/zeromq/jeromq/issues/447)).
+  * ZMQ.Socket class is no longer final.
+  * Handle interrupt caused by close in ZBeacon.
+
+* [#468](https://github.com/zeromq/jeromq/pull/468): Fix an issue where sockets
+  would disconnect when network connection was lost.
+
+* [#469](https://github.com/zeromq/jeromq/pull/469) Various small fixes:
+  * Fixed an error in comparison of byte arrays in the Mechanism class.
+  * Handled the possibility of receiving a null message in ZSocket by returning
+    null instead of throwing an uncaught NullPointerException.
+  * Fixed the return value of ZMQ.setHWM, which indicates the status of the
+    lower-level calls to set the send and receive HWM, but was doing so
+    incorrectly.
+
+* [#478](https://github.com/zeromq/jeromq/pull/478): Fixed an issue where, when
+  using an XPUB/XSUB proxy, the PUB socket was throwing an error when attempting
+  to send a message if all of the subscriptions have been removed.
+
+* [#479](https://github.com/zeromq/jeromq/pull/479): Various internal
+  improvements.
+
+* [#486](https://github.com/zeromq/jeromq/pull/486): Fixed an issue where it was
+  not possible to send two messages in a row without a successful receive in
+  between, even with the RELAXED option set on the REQ socket.
+
+* [#487](https://github.com/zeromq/jeromq/pull/487) Various improvements:
+  * Added some method name aliases for compatibility with the jzmq API, in
+    places where the JeroMQ method names differed.
+  * Miscellaneous internal refactoring to make JeroMQ code more similar to that
+    of jzmq.
+  * It is not possible to get the values of the ZMQ options `ZMQ_REQ_CORRELATE`
+    and `ZMQ_REQ_RELAXED`, so `getReqCorrelated` and `getReqRelaxed` are now
+    deprecated and will throw an UnsupportedOperationException when called.
+
+* [#492](https://github.com/zeromq/jeromq/pull/492): Fixed an issue where a
+  NullPointerException was thrown when trying to bind on an already used port,
+  for example when the socket has a monitor.
+
+* [#502](https://github.com/zeromq/jeromq/pull/502): Use explicit mutex locks to
+  help prevent problems caused by concurrent access to a ZContext. This makes
+  ZContext behave more like libzmq's zctx.
+
+## v0.4.2 (2017-06-29)
+
+* [#443](https://github.com/zeromq/jeromq/pull/443): Fix issue where JeroMQ was
+broken on Android. Security no longer depends on libsodium and is now pure Java
+
+## v0.4.1 (2017-06-28)
+
+### Added
+
+JeroMQ is now based off of 4.1.7 of libzmq which means it now supports additional security features.
+
+### Changed
+
+* [#413](https://github.com/zeromq/jeromq/pull/413): fixed a NullPointerException when ZMQ.ZMQ_TCP_ACCEPT_FILTER is used
+
+* [#412](https://github.com/zeromq/jeromq/pull/412): tcp accept filter null pointer exception fix
+
+## v0.4.0 (2017-03-22)
+
+### Added
+
+* [#366](https://github.com/zeromq/jeromq/pull/366): support for `ZMQ_REQ_RELAXED` and `ZMQ_REQ_CORRELATE` socket options
+
+* [#375](https://github.com/zeromq/jeromq/pull/375): re-added `ZMQ.Socket.disconnect`, which had been removed in 0.3.6 because the contributor who originally added it did not agree to the license change from LGPL to MPLv2
+
+### Changed
+
+* [#374](https://github.com/zeromq/jeromq/pull/374):
+  * fixed a NullPointerException and mangling of existing indexes in ZMQ.Poller
+  * fixed a Windows bug in Signaler
+  * other small changes to keep JeroMQ in sync with jzmq
+
+* [#386](https://github.com/zeromq/jeromq/pull/386): improved deallocation of polling Selector resources. When creating a poller via `ZMQ.Context.poller` or `ZContext.createPoller`, the context will manage the Selector resources and ensure that they are deallocated when the context is terminated.
+
+* [#387](https://github.com/zeromq/jeromq/pull/387): (**BREAKING CHANGE**) It is no longer possible to create a ZMQ.Poller in any way except via a context.  This is to ensure that all Selector resources are deallocated when a context is terminated.
+
+* [#388](https://github.com/zeromq/jeromq/pull/388) `ZMQ.Socket.setLinger` can now be called safely after a context is terminated.
+
+* [#390](https://github.com/zeromq/jeromq/pull/390): fixed a bug where terminating a context while polling would sometimes cause a ClosedChannelException.
+
+* [#399](https://github.com/zeromq/jeromq/pull/399): fixed a NullPointerException that would sometimes occur when terminating a context
+
+* [#400](https://github.com/zeromq/jeromq/pull/400): (**BREAKING CHANGE**)
+  * deprecated the setters `setIoThreads`, `setMain` and `setContext` in `ZContext`. These parameters are set in the constructor and `final`. Because it is no longer possible to set these values after constructing a ZContext, the setters are now no-ops.
+
+* [#402](https://github.com/zeromq/jeromq/pull/402): added constructors for ZPoller that take a ZContext argument, thus making it possible to create a ZPoller whose Selector resources are managed by the context.
+
+## v0.3.6 (2016-09-27)
+
+### Added
+
+* [#292](https://github.com/zeromq/jeromq/pull/292/commits/12befcb27f13572a5a49669e433a399c3e5a72ac): support for `ZMQ_XPUB_NODROP` and `ZMQ_XPUB_VERBOSE_UNSUBSCRIBE` options
+
+* [#299](https://github.com/zeromq/jeromq/pull/299): a setter for UncaughtExceptionHandlers in ZBeacon threads
+
+* [#309](https://github.com/zeromq/jeromq/pull/309): MsgAllocator allows you to define how Msgs are allocated.
+
+* [#316](https://github.com/zeromq/jeromq/pull/316): ZSocket high-level API allows you to work with sockets directly without having to manage the ZMQ context.
+
+### Changed
+
+* [**JeroMQ no longer supports Java 6.**](https://github.com/zeromq/jeromq/pull/316/commits/3cafb3babdb7509ec7adb705e1dacb6a804294a7)
+
+* Changed from LGPL to [MPLv2](https://www.mozilla.org/en-US/MPL/2.0/) license.
+
+* Related to changing license, the following changes were made as a result of reverting pre-0.3.6 commits by contributors who did not agree to the license change:
+  * `ZMQ.Socket.disconnect` method removed
+  * [Slight changes to the way ephemeral ports are handled](https://github.com/zeromq/jeromq/pull/354/commits/f455c740be4950ea7973276c33141008dadd97e7).
+
+* [#266](https://github.com/zeromq/jeromq/pull/266): fixed a NullPointerException bug in `ZMsg.dump` when attempting to dump a ZMsg after its frames have been cleared
+
+* [#271](https://github.com/zeromq/jeromq/pull/271), [#272](https://github.com/zeromq/jeromq/pull/272): misc fixes and improvements to ZAgent, ZActor, ZProxy, and ZStar
+
+* [#295](https://github.com/zeromq/jeromq/pull/295): renamed `ZMQ.Socket.setRouterHandlover` to `ZMQ.Socket.setRouterHandover` (typo fix)
+
+* [#301](https://github.com/zeromq/jeromq/pull/301): fixed [a bug](https://github.com/zeromq/jeromq/issues/280) where if a frame failed to send, it would still try to send the next frame
+
+* [#306](https://github.com/zeromq/jeromq/pull/306), [#308](https://github.com/zeromq/jeromq/pull/308), [#311](https://github.com/zeromq/jeromq/pull/311): misc byte buffer performance improvements and bugfixes
+
+* [#324](https://github.com/zeromq/jeromq/pull/324): implementation changes to avoid extra bytes being copied in PUB/SUB
+
+## v0.3.5 (2015-07-15)
 
  * Capitalize constants
  * Use for each style
@@ -82,7 +430,7 @@
  * Fix resource leak at socket close
  * Fix c-style method name
 
-## v0.3.4
+## v0.3.4 (2014-05-15)
 
 * Various code improvements
 * Add unbind method to org.zeromq.ZMQ.Socket
@@ -104,7 +452,7 @@
 * Revert back to use currentTimeMillis because it's less expensive than nanoTime
 * Fix issue #122 - handshake now uses ByteBuffer accessor methods directly
 
-## v0.3.2
+## v0.3.2 (2013-12-10)
 
 * Various code improvements
 * Update junit to version 4.11
@@ -117,13 +465,7 @@
 * Backport fix for race condition on shutdown
 * sendByteBuffer should return number of sent bytes
 
-## v0.3.1
-
-* [maven-release-plugin] prepare release v0.3.1
-* Update README.md
-* [maven-release-plugin] prepare for next development iteration
-
-## v0.3.0
+## v0.3.0 (2013-11-03)
 
 * [maven-release-plugin] prepare release v0.3.0
 * Prepare for release

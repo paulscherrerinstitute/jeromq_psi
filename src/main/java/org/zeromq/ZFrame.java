@@ -1,30 +1,10 @@
-/*
-    Copyright (c) 2007-2014 Contributors as noted in the AUTHORS file
-
-    This file is part of 0MQ.
-
-    0MQ is free software; you can redistribute it and/or modify it under
-    the terms of the GNU Lesser General Public License as published by
-    the Free Software Foundation; either version 3 of the License, or
-    (at your option) any later version.
-
-    0MQ is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Lesser General Public License for more details.
-
-    You should have received a copy of the GNU Lesser General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
-
 package org.zeromq;
 
-import java.io.IOException;
-import java.io.PrintWriter;
-import java.io.StringWriter;
+import java.nio.charset.Charset;
 import java.util.Arrays;
 
 import org.zeromq.ZMQ.Socket;
+import org.zeromq.util.ZData;
 
 /**
  * ZFrame
@@ -39,8 +19,8 @@ import org.zeromq.ZMQ.Socket;
 
 public class ZFrame
 {
-    public static final int MORE  =   ZMQ.SNDMORE;
-    public static final int REUSE =   128;     // no effect at java
+    public static final int MORE     = ZMQ.SNDMORE;
+    public static final int REUSE    = 128;         // no effect at java
     public static final int DONTWAIT = ZMQ.DONTWAIT;
 
     private boolean more;
@@ -73,6 +53,7 @@ public class ZFrame
      * Class Constructor
      * Copies String into frame data
      * @param data
+     *          String to copy into ZFrame object as bytes, decoded using {@link ZMQ#CHARSET}
      */
     public ZFrame(String data)
     {
@@ -97,6 +78,14 @@ public class ZFrame
     public byte[] getData()
     {
         return data;
+    }
+
+    public String getString(Charset charset)
+    {
+        if (!hasData()) {
+            return "";
+        }
+        return new String(data, charset);
     }
 
     /**
@@ -143,10 +132,7 @@ public class ZFrame
      */
     public boolean send(Socket socket, int flags)
     {
-        if (socket == null) {
-            throw new IllegalArgumentException("socket parameter must be set");
-        }
-
+        Utils.checkArgument(socket != null, "socket parameter must be set");
         return socket.send(data, flags);
     }
 
@@ -266,16 +252,7 @@ public class ZFrame
      */
     public String strhex()
     {
-        String hexChar = "0123456789ABCDEF";
-
-        StringBuilder b = new StringBuilder();
-        for (byte aData : data) {
-            int b1 = aData >>> 4 & 0xf;
-            int b2 = aData & 0xf;
-            b.append(hexChar.charAt(b1));
-            b.append(hexChar.charAt(b2));
-        }
-        return b.toString();
+        return ZData.strhex(data);
     }
 
     /**
@@ -288,10 +265,7 @@ public class ZFrame
      */
     public boolean streq(String str)
     {
-        if (!hasData()) {
-            return false;
-        }
-        return new String(this.data, ZMQ.CHARSET).compareTo(str) == 0;
+        return ZData.streq(data, str);
     }
 
     @Override
@@ -318,25 +292,10 @@ public class ZFrame
      * @return
      *          A text string or hex-encoded string if data contains any non-printable ASCII characters
      */
+    @Override
     public String toString()
     {
-        if (!hasData()) {
-            return "";
-        }
-        // Dump message as text or hex-encoded string
-        boolean isText = true;
-        for (byte aData : data) {
-            if (aData < 32) {
-                isText = false;
-                break;
-            }
-        }
-        if (isText) {
-            return new String(data, ZMQ.CHARSET);
-        }
-        else {
-            return strhex();
-        }
+        return ZData.toString(data);
     }
 
     /**
@@ -349,10 +308,7 @@ public class ZFrame
      */
     private byte[] recv(Socket socket, int flags)
     {
-        if (socket == null) {
-            throw new IllegalArgumentException("socket parameter must not be null");
-        }
-
+        Utils.checkArgument(socket != null, "socket parameter must not be null");
         data = socket.recv(flags);
         more = socket.hasReceiveMore();
         return data;
@@ -386,7 +342,7 @@ public class ZFrame
     public static ZFrame recvFrame(Socket socket, int flags)
     {
         ZFrame f = new ZFrame();
-        byte [] data = f.recv(socket, flags);
+        byte[] data = f.recv(socket, flags);
         if (data == null) {
             return null;
         }
@@ -395,47 +351,6 @@ public class ZFrame
 
     public void print(String prefix)
     {
-        StringWriter sw = new StringWriter();
-        PrintWriter pw = new PrintWriter(sw);
-
-        if (prefix != null) {
-            pw.printf("%s", prefix);
-        }
-        byte []data = getData();
-        int size = size();
-
-        boolean isBin = false;
-        int charNbr;
-        for (charNbr = 0; charNbr < size; charNbr++) {
-            if (data[charNbr] < 9 || data[charNbr] > 127) {
-                isBin = true;
-            }
-        }
-
-        pw.printf("[%03d] ", size);
-        int maxSize = isBin ? 35 : 70;
-        String elipsis = "";
-        if (size > maxSize) {
-            size = maxSize;
-            elipsis = "...";
-        }
-        for (charNbr = 0; charNbr < size; charNbr++) {
-            if (isBin) {
-                pw.printf("%02X", data[charNbr]);
-            }
-            else {
-                pw.printf("%c", data[charNbr]);
-            }
-        }
-        pw.printf("%s\n", elipsis);
-        pw.flush();
-        pw.close();
-        try {
-            sw.close();
-        }
-        catch (IOException e) {
-        }
-
-        System.out.print(sw.toString());
+        ZData.print(System.out, prefix, getData(), size());
     }
 }

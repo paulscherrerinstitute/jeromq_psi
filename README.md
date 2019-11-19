@@ -1,38 +1,48 @@
-#JeroMQ
+# JeroMQ
 
 Pure Java implementation of libzmq (http://zeromq.org).
 
 [![Build Status](https://travis-ci.org/zeromq/jeromq.png)](https://travis-ci.org/zeromq/jeromq)
+[![Coverage Status](https://coveralls.io/repos/github/zeromq/jeromq/badge.svg?branch=master)](https://coveralls.io/github/zeromq/jeromq?branch=master)
+[![Maven Central](https://img.shields.io/maven-central/v/org.zeromq/jeromq.svg)](https://maven-badges.herokuapp.com/maven-central/org.zeromq/jeromq)
+[![Javadocs](http://www.javadoc.io/badge/org.zeromq/jeromq.svg)](http://www.javadoc.io/doc/org.zeromq/jeromq)
 
 ## Features
 
-* Based on libzmq 3.2.5.
-* ZMTP/2.0 (http://rfc.zeromq.org/spec:15).
+* Based on libzmq 4.1.7.
+* ZMTP/3.0 (http://rfc.zeromq.org/spec:23).
 * tcp:// protocol and inproc:// is compatible with zeromq.
 * ipc:// protocol works only between jeromq (uses tcp://127.0.0.1:port internally).
-* Not too bad performance compared to zeromq.
- * 4.5M messages (100B) per sec.
- * [Performance](https://github.com/zeromq/jeromq/wiki/Performance).
+
+* Securities
+  * [PLAIN](http://rfc.zeromq.org/spec:24).
+  * [CURVE](http://rfc.zeromq.org/spec:25).
+
+* Performance that's not too bad, compared to native libzmq.
+  * 4.5M messages (100B) per sec.
+  * [Performance](https://github.com/zeromq/jeromq/wiki/Performance).
 * Exactly same developer experience with zeromq and jzmq.
 
-## Not supported Features
+## Unsupported
 
 * ipc:// protocol with zeromq. Java doesn't support UNIX domain socket.
 * pgm:// protocol. Cannot find a pgm Java implementation.
+* norm:// protocol. Cannot find a Java implementation.
+* tipc:// protocol. Cannot find a Java implementation.
 
-## Extended Features
+* GSSAPI mechanism is not yet implemented.
 
-* Build your own StreamEngine's Decoder/Encoder:
- * [TestProxyTcp](https://github.com/zeromq/jeromq/blob/master/src/test/java/zmq/TestProxyTcp.java)
- * [Proxy](https://github.com/zeromq/jeromq/blob/master/src/main/java/org/jeromq/codec/Proxy.java)
+* TCP KeepAlive Count, Idle, Interval cannot be set via Java but as OS level.
 
-## Contribution Process
+* Interrupting threads is still unsupported: library is NOT Thread.interrupt safe.
 
-This project uses the [C4 process](http://rfc.zeromq.org/spec:16) for all code changes. "Everyone,
-without distinction or discrimination, SHALL have an equal right to become a Contributor under the
-terms of this contract."
+## Contributing
+
+Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for details about the contribution process and useful development tasks.
 
 ## Usage
+
+### Maven
 
 Add it to your Maven project's `pom.xml`:
 
@@ -40,14 +50,14 @@ Add it to your Maven project's `pom.xml`:
     <dependency>
       <groupId>org.zeromq</groupId>
       <artifactId>jeromq</artifactId>
-      <version>0.3.5</version>
+      <version>0.5.0</version>
     </dependency>
 
     <!-- for the latest SNAPSHOT -->
     <dependency>
       <groupId>org.zeromq</groupId>
       <artifactId>jeromq</artifactId>
-      <version>0.3.6-SNAPSHOT</version>
+      <version>0.5.1-SNAPSHOT</version>
     </dependency>
 
     <!-- If you can't find the latest snapshot -->
@@ -65,7 +75,7 @@ Add it to your Maven project's `pom.xml`:
     </repositories>
 ```
 
-## Using ANT
+### Ant
 
 To generate an ant build file from `pom.xml`, issue the following command:
 
@@ -73,10 +83,65 @@ To generate an ant build file from `pom.xml`, issue the following command:
 mvn ant:ant
 ```
 
-Also please refer the [Wiki](https://github.com/zeromq/jeromq/wiki).
+## Getting started
 
-## Copying
+### Simple example
 
-Free use of this software is granted under the terms of the GNU Lesser General
-Public License (LGPL). For details see the files `COPYING` and `COPYING.LESSER`
-included with the JeroMQ distribution.
+Here is how you might implement a server that prints the messages it receives
+and responds to them with "Hello, world!":
+
+```java
+import org.zeromq.ZMQ;
+import org.zeromq.ZContext;
+
+public class hwserver
+{
+    public static void main(String[] args) throws Exception
+    {
+        try (ZContext context = new ZContext()) {
+            // Socket to talk to clients
+            ZMQ.Socket socket = context.createSocket(ZMQ.REP);
+            socket.bind("tcp://*:5555");
+
+            while (!Thread.currentThread().isInterrupted()) {
+                // Block until a message is received
+                byte[] reply = socket.recv(0);
+
+                // Print the message
+                System.out.println(
+                    "Received: [" + new String(reply, ZMQ.CHARSET) + "]"
+                );
+
+                // Send a response
+                String response = "Hello, world!";
+                socket.send(response.getBytes(ZMQ.CHARSET), 0);
+            }
+        }
+    }
+}
+```
+
+### More examples
+
+The JeroMQ [translations of the zguide examples](src/test/java/guide) are a good
+reference for recommended usage.
+
+(Note that the Java examples in the [zguide](http://zguide.zeromq.org) itself
+are out of date and do not necessarily reflect current recommended practices
+with JeroMQ.)
+
+### Documentation
+
+For API-level documentation, see the
+[Javadocs](http://www.javadoc.io/doc/org.zeromq/jeromq).
+
+This repo also has a [doc](doc/) folder, which contains assorted "how to do X"
+guides and other useful information about various topics related to using
+JeroMQ.
+
+## License
+
+All source files are copyright © 2007-2018 contributors as noted in the AUTHORS file.
+
+Free use of this software is granted under the terms of the Mozilla Public License 2.0. For details see the file `LICENSE` included with the JeroMQ distribution.
+

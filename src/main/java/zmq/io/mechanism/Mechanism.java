@@ -134,7 +134,8 @@ public abstract class Mechanism
 
     protected final int parseMetadata(Msg msg, int offset, boolean zapFlag)
     {
-        return parseMetadata(msg.buf(), offset, zapFlag);
+        ByteBuffer buffer = msg.buf();
+        return parseMetadata(buffer, offset + buffer.position(), zapFlag);
     }
 
     protected final int parseMetadata(ByteBuffer msg, int offset, boolean zapFlag)

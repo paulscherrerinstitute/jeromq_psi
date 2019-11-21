@@ -26,10 +26,12 @@ public class Msgs
         if (msg.size() < length + start) {
             return false;
         }
-        boolean comparison = includeLength ? length == (msg.get(0) & 0xff) : true;
+        //boolean comparison = includeLength ? length == (msg.get(msg) & 0xff) : true;
+        int pos = msg.buf().position();
+        boolean comparison = includeLength ? length == (msg.get(pos) & 0xff) : true;
         if (comparison) {
             for (int idx = start; idx < length; ++idx) {
-                comparison = (msg.get(idx) == data.charAt(idx - start));
+                comparison = (msg.get(pos + idx) == data.charAt(idx - start));
                 if (!comparison) {
                     break;
                 }

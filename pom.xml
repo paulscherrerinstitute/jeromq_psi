@@ -3,7 +3,7 @@
   <groupId>org.zeromq</groupId>
   <artifactId>jeromq</artifactId>
   <packaging>jar</packaging>
-  <version>0.5.1</version>
+  <version>0.5.1-PSI</version>
   <name>JeroMQ</name>
   <description>Pure Java implementation of libzmq</description>
   <url>https://github.com/zeromq/jeromq</url>
@@ -39,13 +39,10 @@
     </dependency>
   </dependencies>
   <distributionManagement>
-    <snapshotRepository>
-      <id>ossrh</id>
-      <url>https://oss.sonatype.org/content/repositories/snapshots</url>
-    </snapshotRepository>
     <repository>
-      <id>ossrh</id>
-      <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+        <id>bintray</id>
+        <name>paulscherrerinstitute-hltools</name>
+        <url>https://dl.bintray.com/paulscherrerinstitute/hltools</url>   
     </repository>
   </distributionManagement>
   <build>
